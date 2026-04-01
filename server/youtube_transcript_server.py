@@ -7,12 +7,13 @@ Exposes a simple HTTP API for fetching YouTube video transcripts.
 
 from flask import Flask, request, jsonify
 from youtube_transcript_api import YouTubeTranscriptApi
+from flask_cors import CORS
 import re
 import sys
 import os
 
 app = Flask(__name__)
-CORS_HEADERS = {'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json'}
+CORS(app)
 
 def extract_video_id(url):
     """Extract video ID from various YouTube URL formats."""
@@ -41,14 +42,16 @@ def get_transcript():
 
     try:
         api = YouTubeTranscriptApi()
-        transcript = api.fetch(video_id)
-        # Join all snippet texts into one full transcript string
-        full_text = ' '.join([s.text for s in transcript.snippets])
-        return jsonify({
+        transcript = api.get_transcript(video_id, languages=['en'])
+        # get_transcript returns a list of dicts with 'text', 'start', 'duration'
+        full_text = ' '.join([item['text'] for item in transcript])
+        response = jsonify({
             'videoId': video_id,
             'transcript': full_text,
-            'language': transcript.language
+            'language': 'en'
         })
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

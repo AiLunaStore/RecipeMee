@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react'
 // Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
 // The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
-const TRANSCRIPT_API = 'https://levin-nas-1.tail065159.ts.net/youtube-transcript'
 const MODEL = 'minimax-m2'
 
 function isYouTubeURL(text) {
@@ -21,14 +20,26 @@ function extractVideoId(url) {
   return null
 }
 
-async function fetchYouTubeTranscript(url) {
-  const response = await fetch(`${TRANSCRIPT_API}?url=${encodeURIComponent(url)}`)
-  if (!response.ok) {
-    const err = await response.json()
-    throw new Error(err.error || 'Failed to fetch transcript')
+async function fetchYouTubeTranscriptBrowser(videoId) {
+  // Fetch transcript using YouTube's internal transcript API from the browser
+  // This avoids CORS issues since the request comes from the user's browser
+  const transcriptUrl = `https://youtubetranscript.com/?v=${videoId}`
+  const response = await fetch(transcriptUrl)
+  if (!response.ok) throw new Error('No transcript available for this video')
+
+  const html = await response.text()
+  // Extract text content from the HTML response
+  const textMatch = html.match(/<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/)
+  if (!textMatch) {
+    // Try alternate extraction
+    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)
+    if (preMatch) return preMatch[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim()
+    throw new Error('Could not parse transcript HTML')
   }
-  const data = await response.json()
-  return data.transcript
+  return textMatch[1]
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .trim()
 }
 
 function parseRecipeWithLLM(rawText) {
@@ -112,7 +123,12 @@ function App() {
       if (isYouTubeURL(textToParse)) {
         setFetchingTranscript(true)
         try {
-          const transcript = await fetchYouTubeTranscript(textToParse)
+          const videoId = extractVideoId(textToParse)
+          if (!videoId) throw new Error('Could not extract video ID from URL')
+          const transcript = await fetchYouTubeTranscriptBrowser(videoId)
+          if (!transcript || transcript.length < 50) {
+            throw new Error('No transcript available for this video. Try a different video or paste the recipe text instead.')
+          }
           textToParse = transcript
         } catch (e) {
           throw new Error('YouTube transcript failed: ' + e.message)
