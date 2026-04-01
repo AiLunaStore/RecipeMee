@@ -3,14 +3,13 @@ import { useState, useEffect } from 'react'
 // Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
 // The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
-const MODEL = 'MiniMax/MiniMax-Text-01'
+const MODEL = 'minimax-m2'
 
 function parseRecipeWithLLM(rawText) {
   return fetch(WORKER_URL, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${API_KEY}`
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
       model: MODEL,
@@ -69,10 +68,6 @@ function App() {
 
   const handleParse = async () => {
     if (!rawText.trim()) return
-    if (!API_KEY) {
-      setError('Worker unavailable — please try again')
-      return
-    }
     setLoading(true)
     setError('')
     setParsed(null)
