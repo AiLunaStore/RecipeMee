@@ -1,34 +1,24 @@
-const CACHE_NAME = 'recipemee-v2';
-const urlsToCache = [
-  '/RecipeMee/',
-  '/RecipeMee/index.html',
-  '/RecipeMee/assets/index-B6oCGqH2.js',
-  '/RecipeMee/assets/index-Citnd3k4.css'
-];
+const CACHE_NAME = 'recipemee-v3';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(urlsToCache))
-  );
   self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {
+  // networkFirst: try network first, fall back to cache
   event.respondWith(
-    caches.match(event.request)
+    fetch(event.request)
       .then((response) => {
-        if (response) return response;
-        return fetch(event.request).then((response) => {
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
+        if (response && response.status === 200) {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(event.request, responseToCache);
           });
-          return response;
-        });
+        }
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request);
       })
   );
 });
