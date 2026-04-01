@@ -1,14 +1,203 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>recipemee</title>
-    <script type="module" crossorigin src="./assets/index-CTSVJi0p.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Citnd3k4.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RecipeMee</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f5f5;font-family:system-ui,sans-serif}.container{max-width:800px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}.title{font-size:28px;margin:0}.tabs{display:flex;gap:8px}.tab{padding:8px 16px;border:none;border-radius:8px;background:#e0e0e0;cursor:pointer;font-size:14px}.tabActive{background:#333;color:#fff}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}.toggle-group{display:flex;gap:8px;margin-bottom:16px}.toggle-btn{padding:6px 14px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px}.toggle-active{border-color:#333;background:#333;color:#fff}.textarea{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:14px;font-family:inherit;resize:vertical}.error{color:#dc2626;padding:10px;background:#fee2e2;border-radius:8px;margin-top:12px;font-size:14px}.parse-btn{margin-top:14px;width:100%;padding:14px;background:#333;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.parse-btn:disabled{opacity:0.5;cursor:not-allowed}.preview{margin-top:24px;padding:20px;background:#f8f9fa;border-radius:12px;border:2px solid #e0e0e0;text-align:left}.preview h2{margin:0 0 8px;font-size:22px}.preview p{color:#666;margin:0 0 12px;font-size:14px}.meta{display:flex;gap:16px;margin-bottom:16px;font-size:14px;color:#555}.preview ul,.preview ol{padding-left:24px;line-height:1.7;font-size:14px}.save-btn{margin-top:20px;width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.search{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:15px;margin-bottom:20px}.empty{text-align:center;color:#999;padding:40px;font-size:15px}.recipe-card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,0.07);text-align:left;margin-bottom:12px}.card-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer}.card-title{margin:0;font-size:18px}.expand-icon{font-size:12px;color:#999}.card-desc{margin:8px 0;color:#666;font-size:13px}.card-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:13px;color:#777;margin-top:8px}.tag{background:#f0f0f0;padding:2px 8px;border-radius:6px}.card-body{margin-top:16px;border-top:1px solid #eee;padding-top:16px}.delete-btn{margin-top:12px;padding:8px 14px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:13px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+(function() {
+'use strict';
+
+// Worker URL — API key is hidden in the Cloudflare Worker, not in browser code
+var WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat';
+var MODEL = 'minimax-m2';
+
+var useState = React.useState;
+var useEffect = React.useEffect;
+var useCallback = React.useCallback;
+
+function App() {
+  var view = useState('add')[0];
+  var setView = useState('add')[1];
+  var inputType = useState('text')[0];
+  var setInputType = useState('text')[1];
+  var rawText = useState('')[0];
+  var setRawText = useState('')[1];
+  var loading = useState(false)[0];
+  var setLoading = useState(false)[1];
+  var error = useState('')[0];
+  var setError = useState('')[1];
+  var parsed = useState(null)[0];
+  var setParsed = useState(null)[1];
+  var recipes = useState([])[0];
+  var setRecipes = useState([])[1];
+  var search = useState('')[0];
+  var setSearch = useState('')[1];
+  var saveMsg = useState('')[0];
+  var setSaveMsg = useState('')[1];
+
+  useEffect(function() {
+    var s = localStorage.getItem('recipemee_recipes');
+    if (s) setRecipes(JSON.parse(s));
+  }, []);
+
+  var handleParse = useCallback(function() {
+    if (!rawText.trim()) return;
+    setLoading(true);
+    setError('');
+    setParsed(null);
+    var text = rawText.trim();
+
+    fetch(WORKER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 2000,
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a recipe parser. Return ONLY valid JSON with: title, description, servings, prepTime, cookTime, totalTime, ingredients (array), instructions (array), tags (array). No markdown, no explanation.'
+          },
+          { role: 'user', content: text }
+        ]
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error.message || 'API error');
+      var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+      // Handle markdown-wrapped JSON or raw JSON
+      var m = content.match(/```json\n?([\s\S]*?)\n?```|(\{[\s\S]*\})/);
+      if (m) {
+        setParsed(JSON.parse(m[1] || m[2]));
+      } else {
+        throw new Error('Could not parse recipe');
+      }
+    })
+    .catch(function(e) { setError('Parse failed: ' + e.message); })
+    .finally(function() { setLoading(false); });
+  }, [rawText]);
+
+  var handleSave = useCallback(function() {
+    if (!parsed) return;
+    var recipe = Object.assign({}, parsed, { id: Date.now(), savedAt: new Date().toISOString() });
+    var updated = [recipe].concat(recipes);
+    setRecipes(updated);
+    localStorage.setItem('recipemee_recipes', JSON.stringify(updated));
+    setSaveMsg('Saved!');
+    setTimeout(function() { setSaveMsg(''); }, 2000);
+    setRawText('');
+    setParsed(null);
+    setView('library');
+  }, [parsed, recipes]);
+
+  var handleDelete = useCallback(function(id) {
+    var updated = recipes.filter(function(r) { return r.id !== id; });
+    setRecipes(updated);
+    localStorage.setItem('recipemee_recipes', JSON.stringify(updated));
+  }, [recipes]);
+
+  var filtered = recipes.filter(function(r) {
+    var q = search.toLowerCase();
+    return (r.title && r.title.toLowerCase().includes(q)) ||
+      (r.ingredients && r.ingredients.some(function(i) { return i.toLowerCase().includes(q); })) ||
+      (r.tags && r.tags.some(function(t) { return t.toLowerCase().includes(q); }));
+  });
+
+  return (
+    React.createElement('div', { className: 'container' },
+      React.createElement('header', { className: 'header' },
+        React.createElement('h1', { className: 'title' }, '📋 RecipeMee'),
+        React.createElement('div', { className: 'tabs' },
+          React.createElement('button', { className: 'tab' + (view === 'add' ? ' tabActive' : ''), onClick: function() { setView('add'); } }, '+ Add'),
+          React.createElement('button', { className: 'tab' + (view === 'library' ? ' tabActive' : ''), onClick: function() { setView('library'); } }, 'Library (' + recipes.length + ')')
+        )
+      ),
+      view === 'add' ?
+        React.createElement('div', { className: 'card' },
+          React.createElement('div', { className: 'toggle-group' },
+            React.createElement('button', { className: 'toggle-btn' + (inputType === 'text' ? ' toggle-active' : ''), onClick: function() { setInputType('text'); } }, 'Paste Text'),
+            React.createElement('button', { className: 'toggle-btn' + (inputType === 'url' ? ' toggle-active' : ''), onClick: function() { setInputType('url'); } }, 'Recipe URL')
+          ),
+          React.createElement('textarea', {
+            className: 'textarea',
+            placeholder: inputType === 'url' ? 'Paste recipe URL...\nhttps://example.com/...' : 'Paste recipe text here...',
+            value: rawText,
+            onChange: function(e) { setRawText(e.target.value); },
+            rows: 10
+          }),
+          error && React.createElement('div', { className: 'error' }, error),
+          React.createElement('button', {
+            className: 'parse-btn',
+            onClick: handleParse,
+            disabled: loading || !rawText.trim()
+          }, loading ? 'Parsing...' : 'Parse Recipe'),
+          parsed && React.createElement('div', { className: 'preview' },
+            React.createElement('h2', null, parsed.title || 'Untitled'),
+            parsed.description && React.createElement('p', null, parsed.description),
+            React.createElement('div', { className: 'meta' },
+              parsed.servings && React.createElement('span', null, '🍽 ' + parsed.servings),
+              parsed.totalTime && React.createElement('span', null, '⏱ ' + parsed.totalTime)
+            ),
+            React.createElement('h3', null, 'Ingredients (' + (parsed.ingredients ? parsed.ingredients.length : 0) + ')'),
+            React.createElement('ul', null, parsed.ingredients && parsed.ingredients.map(function(ing, i) { return React.createElement('li', {key: i}, ing); })),
+            React.createElement('h3', null, 'Instructions (' + (parsed.instructions ? parsed.instructions.length : 0) + ' steps)'),
+            React.createElement('ol', null, parsed.instructions && parsed.instructions.map(function(s, i) { return React.createElement('li', {key: i}, s); })),
+            React.createElement('button', { className: 'save-btn', onClick: handleSave }, saveMsg || '💾 Save to Library')
+          )
+        ) :
+        React.createElement('div', null,
+          React.createElement('input', {
+            className: 'search',
+            placeholder: 'Search recipes, ingredients, tags...',
+            value: search,
+            onChange: function(e) { setSearch(e.target.value); }
+          }),
+          filtered.length === 0 ?
+            React.createElement('div', { className: 'empty' }, recipes.length === 0 ? 'No recipes yet.' : 'No matches.') :
+            filtered.map(function(recipe) { return React.createElement(RecipeCard, { key: recipe.id, recipe: recipe, onDelete: handleDelete }); })
+        )
+    )
+  );
+}
+
+function RecipeCard(props) {
+  var open = useState(false)[0];
+  var setOpen = useState(false)[1];
+  var recipe = props.recipe, onDelete = props.onDelete;
+  return React.createElement('div', { className: 'recipe-card' },
+    React.createElement('div', { className: 'card-header', onClick: function() { setOpen(!open); } },
+      React.createElement('h3', { className: 'card-title' }, recipe.title || 'Untitled'),
+      React.createElement('span', { className: 'expand-icon' }, open ? '▲' : '▼')
+    ),
+    recipe.description && React.createElement('p', { className: 'card-desc' }, recipe.description),
+    React.createElement('div', { className: 'card-meta' },
+      recipe.servings && React.createElement('span', null, '🍽 ' + recipe.servings),
+      recipe.totalTime && React.createElement('span', null, '⏱ ' + recipe.totalTime),
+      recipe.tags && recipe.tags.map(function(t) { return React.createElement('span', { key: t, className: 'tag' }, t); })
+    ),
+    open && React.createElement('div', { className: 'card-body' },
+      React.createElement('h4', null, 'Ingredients'),
+      React.createElement('ul', null, recipe.ingredients && recipe.ingredients.map(function(i, idx) { return React.createElement('li', {key: idx}, i); })),
+      React.createElement('h4', null, 'Instructions'),
+      React.createElement('ol', null, recipe.instructions && recipe.instructions.map(function(s, idx) { return React.createElement('li', {key: idx}, s); })),
+      React.createElement('button', { className: 'delete-btn', onClick: function() { onDelete(recipe.id); } }, '🗑 Delete')
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode, null, React.createElement(App)));
+})();
+</script>
+</body>
 </html>
