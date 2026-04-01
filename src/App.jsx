@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react'
 
-const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || ''
-const MODEL = 'minimax/minimax-m2.7'
+const API_KEY = import.meta.env.VITE_MINIMAX_API_KEY || ''
+const MODEL = 'MiniMax/MiniMax-Text-01'
 
 function parseRecipeWithLLM(rawText) {
-  return fetch('https://openrouter.ai/api/v1/chat/completions', {
+  return fetch('https://api.minimax.io/v1/text/chatcompletion_v2', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${API_KEY}`,
-      'HTTP-Referer': 'http://localhost:5173',
-      'X-Title': 'RecipeMee'
+      'Authorization': `Bearer ${API_KEY}`
     },
     body: JSON.stringify({
       model: MODEL,
@@ -70,7 +68,7 @@ function App() {
   const handleParse = async () => {
     if (!rawText.trim()) return
     if (!API_KEY) {
-      setError('Missing VITE_OPENROUTER_API_KEY in .env file')
+      setError('Missing VITE_MINIMAX_API_KEY in .env file')
       return
     }
     setLoading(true)
