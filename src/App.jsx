@@ -23,7 +23,16 @@ const COLORS = {
   star: '#FBBF24',
 }
 
-const ALL_TAGS = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Drinks', 'Vegan', 'Vegetarian', 'Gluten-Free', 'Quick (<30min)', 'Keto', 'Low-Carb', 'Comfort Food', 'Healthy', 'Spicy', 'Asian', 'Mexican', 'Italian', 'American']
+const ALL_TAGS = [
+  // Meal Type
+  'Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Drinks', 'Appetizer',
+  // Dietary
+  'Vegan', 'Vegetarian', 'Gluten-Free', 'Keto', 'Low-Carb', 'Dairy-Free', 'Nut-Free',
+  // Cuisine
+  'Italian', 'Mexican', 'Asian', 'Chinese', 'Japanese', 'Thai', 'Indian', 'Mediterranean', 'American', 'French', 'Korean', 'Vietnamese',
+  // Style
+  'Quick (<30min)', 'Healthy', 'Comfort Food', 'Spicy', 'One-Pot', 'Meal-Prep', 'Gourmet', 'Budget-Friendly', 'Kid-Friendly'
+]
 
 function isYouTubeURL(text) {
   return /youtube\.com|youtu\.be/.test(text)
@@ -55,11 +64,14 @@ function parseRecipeWithLLM(rawText) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 2000,
-      temperature: 0.3,
+      max_tokens: 2500,
+      temperature: 0.2,
       messages: [{
         role: 'system',
-        content: `Parse this recipe into clean JSON. For each ingredient, try to identify and extract the quantity as a separate "qty" field.
+        content: `Parse this recipe into clean JSON. Be aggressive with tagging — detect EVERYTHING relevant.
+For each ingredient, extract the quantity, unit, and item separately.
+For instructions, detect if there's a timer mentioned (like "5 mins", "30 minutes", "1 hour").
+
 Return ONLY the JSON object with this exact structure:
 {
   "title": "Recipe name",
@@ -68,11 +80,19 @@ Return ONLY the JSON object with this exact structure:
   "prepTime": "15 mins",
   "cookTime": "30 mins",
   "totalTime": "45 mins",
-  "ingredients": [{"text": "full ingredient text", "qty": "quantity if detectable", "unit": "unit if detectable", "item": "ingredient name"}],
-  "instructions": [{"text": "step text", "timer": "optional timer like '5 mins'"}],
-  "tags": ["relevant tags"],
+  "ingredients": [{"text": "full ingredient text", "qty": "2", "unit": "cups", "item": "flour"}],
+  "instructions": [{"text": "step text", "timer": "5 mins"}],
+  "tags": ["Breakfast", "Vegan", "Quick (<30min)", "Healthy", "Italian"],
   "photoUrl": ""
 }
+
+IMPORTANT — Tag Detection Rules:
+- MEAL TYPE (pick ALL that apply): Breakfast, Lunch, Dinner, Dessert, Snack, Drinks, Appetizer
+- DIETARY: Vegan, Vegetarian, Gluten-Free, Keto, Low-Carb, Dairy-Free, Nut-Free
+- CUISINE: Italian, Mexican, Asian, Chinese, Japanese, Thai, Indian, Mediterranean, American, French, Korean, Vietnamese
+- STYLE: Quick (<30min), Healthy, Comfort Food, Spicy, One-Pot, Meal-Prep, Gourmet, Budget-Friendly, Kid-Friendly
+- Based on TOTAL TIME: if totalTime is under 30 mins, tag "Quick (<30min)"
+
 Return ONLY the JSON, nothing else.`
       }, { role: 'user', content: rawText }]
     })
@@ -271,21 +291,78 @@ export default function App() {
     }
   }
 
+  function autoTagRecipe(recipe, rawText) {
+    const text = (rawText || '').toLowerCase()
+    const title = (recipe.title || '').toLowerCase()
+    const combined = title + ' ' + text
+    const tags = new Set(recipe.tags || [])
+
+    // Auto-detect meal type
+    const breakfastWords = ['breakfast', 'pancake', 'waffle', 'omelette', 'scrambled', 'cereal', 'oatmeal', 'oats', 'toast', 'bacon', 'eggs', 'muffin', 'french toast', 'hash brown', 'sausage', 'bagel', 'smoothie bowl']
+    const lunchWords = ['sandwich', 'wrap', 'salad', 'soup', 'lunch', 'bowl', 'taco', 'quesadilla', 'panini', 'sub', 'burger']
+    const dinnerWords = ['dinner', 'supper', 'steak', 'roast', 'pasta', 'stir fry', 'curry', 'risotto', 'lasagna', 'enchilada', 'baked', 'grilled', 'simmer', 'casserole']
+    const dessertWords = ['dessert', 'cake', 'cookie', 'brownie', 'pie', 'ice cream', 'pudding', 'mousse', 'cheesecake', 'chocolate', 'candy', 'fudge', 'tart', 'cobbler']
+    const snackWords = ['snack', 'trail mix', 'popcorn', 'crackers', 'dip', 'hummus', 'nuts', 'granola', 'energy ball']
+    const drinkWords = ['smoothie', 'juice', 'coffee', 'tea', 'latte', 'shake', 'cocktail', 'lemonade', 'infused water', 'milkshake', 'hot chocolate', 'chai', 'espresso']
+
+    if (breakfastWords.some(w => combined.includes(w))) tags.add('Breakfast')
+    if (lunchWords.some(w => combined.includes(w))) tags.add('Lunch')
+    if (dinnerWords.some(w => combined.includes(w))) tags.add('Dinner')
+    if (dessertWords.some(w => combined.includes(w))) tags.add('Dessert')
+    if (snackWords.some(w => combined.includes(w))) tags.add('Snack')
+    if (drinkWords.some(w => combined.includes(w))) tags.add('Drinks')
+
+    // Auto-detect dietary
+    const veganWords = ['vegan', 'plant-based', 'plant based', 'dairy-free', 'egg-free', 'no animal']
+    const vegWords = ['vegetarian', 'no meat', 'meatless', 'veggie']
+    const gfWords = ['gluten-free', 'gluten free', 'celiac', 'gf ', 'wheat-free', 'all-purpose flour']
+    const ketoWords = ['keto', 'low-carb', 'low carb', 'atkins', 'banting']
+    const dairyWords = ['dairy-free', 'lactose-free', 'lactose free', 'dairy free', 'no dairy', 'vegan']
+
+    if (veganWords.some(w => combined.includes(w))) tags.add('Vegan')
+    if (vegWords.some(w => combined.includes(w)) && !combined.includes('non-vegetarian')) tags.add('Vegetarian')
+    if (gfWords.some(w => combined.includes(w))) tags.add('Gluten-Free')
+    if (ketoWords.some(w => combined.includes(w))) tags.add('Keto')
+    if (dairyWords.some(w => combined.includes(w))) tags.add('Dairy-Free')
+
+    // Auto-detect cuisine
+    if (combined.includes('italian') || combined.includes('pasta') || combined.includes('pizza') || combined.includes('risotto') || combined.includes('spaghetti') || combined.includes('lasagna') || combined.includes('basil') && combined.includes('oregano')) tags.add('Italian')
+    if (combined.includes('mexican') || combined.includes('taco') || combined.includes('burrito') || combined.includes('salsa') || combined.includes('enchilada') || combined.includes('quesadilla') || combined.includes('guacamole') || combined.includes('tortilla')) tags.add('Mexican')
+    if (combined.includes('chinese') || combined.includes('dim sum') || combined.includes('wok') || combined.includes('soy sauce') && combined.includes('ginger')) tags.add('Chinese')
+    if (combined.includes('japanese') || combined.includes('sushi') || combined.includes('ramen') || combined.includes('miso') || combined.includes('teriyaki') || combined.includes('tempura')) tags.add('Japanese')
+    if (combined.includes('thai') || combined.includes('pad thai') || combined.includes('curry') && combined.includes('coconut')) tags.add('Thai')
+    if (combined.includes('indian') || combined.includes('curry') || combined.includes('garam masala') || combined.includes('tikka') || combined.includes('naan') || combined.includes('paneer')) tags.add('Indian')
+    if (combined.includes('korean') || combined.includes('kimchi') || combined.includes('bibimbap') || combined.includes('gochujang') || combined.includes('bulgogi')) tags.add('Korean')
+    if (combined.includes('vietnamese') || combined.includes('pho') || combined.includes('banh mi') || combined.includes('vermicelli')) tags.add('Vietnamese')
+    if (combined.includes('mediterranean') || combined.includes('hummus') || combined.includes('falafel') || combined.includes('tzatziki') || combined.includes('olive oil') && combined.includes('oregano')) tags.add('Mediterranean')
+
+    // Auto-detect style
+    if (combined.includes('quick') || combined.includes('easy') || combined.includes('15 minute') || combined.includes('20 minute') || combined.includes('30 minute') || combined.includes('fast') || combined.includes('under 30')) tags.add('Quick (<30min)')
+    if (combined.includes('healthy') || combined.includes('nutritious') || combined.includes('low calorie') || combined.includes('high protein') || combined.includes('salad') || combined.includes('lean')) tags.add('Healthy')
+    if (combined.includes('comfort') || combined.includes('hearty') || combined.includes('stick to your ribs') || combined.includes('creamy') || combined.includes('mac and cheese') || combined.includes('potato')) tags.add('Comfort Food')
+    if (combined.includes('spicy') || combined.includes('hot') || combined.includes('chili') || combined.includes('jalapeño') || combined.includes('cayenne') || combined.includes('red pepper')) tags.add('Spicy')
+    if (combined.includes('one-pot') || combined.includes('one pot') || combined.includes('one-pan') || combined.includes('sheet pan')) tags.add('One-Pot')
+    if (combined.includes('meal prep') || combined.includes('meal-prep') || combined.includes('batch') || combined.includes('freezer')) tags.add('Meal-Prep')
+    if (combined.includes('kid') || combined.includes('child') || combined.includes('toddler') || combined.includes('family friendly')) tags.add('Kid-Friendly')
+    if (combined.includes('budget') || combined.includes('cheap') || combined.includes('affordable') || combined.includes('economical')) tags.add('Budget-Friendly')
+
+    return Array.from(tags)
+  }
+
   function handleSave() {
     if (!parsed) return
-    // Ensure servings info
     let servings = parsed.servings || '4'
     if (typeof servings === 'number') servings = String(servings)
-    // Normalize ingredients
     let ingredients = parsed.ingredients || []
     if (typeof ingredients[0] === 'string') {
       ingredients = ingredients.map(text => ({ text, qty: null, unit: null, item: text }))
     }
+    const autoTags = autoTagRecipe(parsed, rawText)
     const recipe = {
       ...parsed,
       servings,
       ingredients,
-      tags: parsed.tags || [],
+      tags: autoTags.length > 0 ? autoTags : parsed.tags || [],
       photoUrl: parsed.photoUrl || '',
       id: Date.now(),
       savedAt: new Date().toISOString(),
@@ -411,14 +488,14 @@ export default function App() {
             </div>
 
             {/* Filter Row */}
-            <div style={styles.filterRow}>
+            <div style={styles.filterRowWrap}>
               <button
                 style={{ ...styles.filterChip, ...(showFavoritesOnly ? styles.filterChipActive : {}) }}
                 onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
               >
                 ♥ Favorites
               </button>
-              {ALL_TAGS.slice(0,6).map(tag => (
+              {ALL_TAGS.map(tag => (
                 <button
                   key={tag}
                   style={{ ...styles.filterChip, ...(selectedTags.includes(tag) ? styles.filterChipActive : {}) }}
@@ -835,7 +912,7 @@ const styles = {
   searchWrapper: { position: 'relative', marginBottom: '12px' },
   searchIcon: { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' },
   searchInput: { width: '100%', padding: '14px 14px 14px 42px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '14px', color: COLORS.text, fontSize: '15px', outline: 'none' },
-  filterRow: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' },
+  filterRowWrap: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' },
   filterChip: { padding: '6px 14px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '20px', color: COLORS.textSecondary, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' },
   filterChipActive: { background: COLORS.primary, borderColor: COLORS.primary, color: COLORS.text },
   clearFilterBtn: { padding: '6px 14px', background: 'transparent', border: 'none', color: COLORS.error, fontSize: '13px', cursor: 'pointer' },
