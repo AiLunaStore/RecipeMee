@@ -18,6 +18,7 @@
 
 var WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat';
 var MODEL = 'minimax-m2';
+var PROXY_URL = 'https://api.codetabs.com/v1/proxy';
 
 // ── helpers ──────────────────────────────────────────────────────────
 function El(tag, props, ...children) {
@@ -72,37 +73,68 @@ function App() {
     loading[1](true);
     error[1]('');
     parsed[1](null);
-    var text = rawText[0].trim();
+    var raw = rawText[0].trim();
+    var isUrl = inputType[0] === 'url' && raw.match(/^https?:\/\//);
 
-    fetch(WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2000,
-        temperature: 0.3,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a recipe parser. Return ONLY valid JSON with: title, description, servings, prepTime, cookTime, totalTime, ingredients (array), instructions (array), tags (array). No markdown, no explanation.'
-          },
-          { role: 'user', content: text }
-        ]
+    function parseAndSet(text) {
+      fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 2000,
+          temperature: 0.3,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a recipe parser. Return ONLY valid JSON with: title, description, servings, prepTime, cookTime, totalTime, ingredients (array), instructions (array), tags (array). No markdown, no explanation.'
+            },
+            { role: 'user', content: text }
+          ]
+        })
       })
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.error) throw new Error(data.error.message || 'API error');
-      var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-      var m = content.match(/```json\n?([\s\S]*?)\n?```|(\{[\s\S]*\})/);
-      if (m) {
-        parsed[1](JSON.parse(m[1] || m[2]));
-      } else {
-        throw new Error('Could not parse recipe');
-      }
-    })
-    .catch(function(e) { error[1]('Parse failed: ' + e.message); })
-    .finally(function() { loading[1](false); });
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) throw new Error(data.error.message || 'API error');
+        var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+        var m = content.match(/```json\n?([\s\S]*?)\n?```|(\{[\s\S]*\})/);
+        if (m) {
+          parsed[1](JSON.parse(m[1] || m[2]));
+        } else {
+          throw new Error('Could not parse recipe');
+        }
+      })
+      .catch(function(e) { error[1]('Parse failed: ' + e.message); })
+      .finally(function() { loading[1](false); });
+    }
+
+    if (isUrl) {
+      var encodedUrl = encodeURIComponent(raw);
+      var proxyFetchUrl = PROXY_URL + '?quest=' + encodedUrl;
+      fetch(proxyFetchUrl)
+        .then(function(r) {
+          if (!r.ok) throw new Error('Failed to fetch URL (HTTP ' + r.status + ')');
+          return r.text();
+        })
+        .then(function(html) {
+          // Strip HTML tags, scripts, styles
+          var text = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+            .replace(/\s+/g, ' ').trim();
+          if (text.length > 8000) text = text.substring(0, 8000);
+          return text;
+        })
+        .then(function(text) { parseAndSet(text); })
+        .catch(function(e) { error[1]('URL fetch failed: ' + e.message); loading[1](false); });
+    } else {
+      parseAndSet(raw);
+    }
   }
 
   function handleSave() {
