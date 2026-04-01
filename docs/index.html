@@ -16,8 +16,8 @@
 (function() {
 'use strict';
 
-var WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat';
-var MODEL = 'minimax-m2';
+var DEEPSEEK_KEY = 'sk-b3ec10308f7644c8a8b3765e52e60ea5';
+var DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 var PROXY_URL = 'https://api.codetabs.com/v1/proxy';
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -77,11 +77,11 @@ function App() {
     var isUrl = inputType[0] === 'url' && raw.match(/^https?:\/\//);
 
     function parseAndSet(text) {
-      fetch(WORKER_URL, {
+      fetch(DEEPSEEK_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
         body: JSON.stringify({
-          model: MODEL,
+          model: 'deepseek-chat',
           max_tokens: 2000,
           temperature: 0.3,
           messages: [
