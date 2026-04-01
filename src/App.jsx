@@ -113,14 +113,45 @@ Return ONLY the JSON, nothing else.`
   .then(r => r.json())
   .then(data => {
     const content = data.choices?.[0]?.message?.content || ''
-    let jsonMatch = content.match(/\{[\s\S]*?\}/s)
-    if (!jsonMatch) jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('Parse failed: ' + content.substring(0, 80))
-    try { return JSON.parse(jsonMatch[0]) }
+    let jsonStr = null
+
+    // Strategy 1: JSON code block
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/i)
+    if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim()
+
+    // Strategy 2: Extract JSON by bracket counting from first {
+    if (!jsonStr) {
+      const firstBrace = content.indexOf('{')
+      if (firstBrace !== -1) {
+        let depth = 0
+        let end = -1
+        for (let i = firstBrace; i < content.length; i++) {
+          if (content[i] === '{') depth++
+          else if (content[i] === '}') {
+            depth--
+            if (depth === 0) { end = i; break }
+          }
+        }
+        if (end !== -1) jsonStr = content.substring(firstBrace, end + 1)
+      }
+    }
+
+    if (!jsonStr) throw new Error('Could not parse recipe — try pasting the text directly')
+
+    // Fix common JSON issues
+    let fixed = jsonStr
+      .replace(/,\s*([}\]])/g, '$1')  // trailing commas
+      .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":')  // unquoted keys
+      .replace(/:\s*'([^']*)'/g, ': "$1"')  // single quotes to double quotes
+
+    try { return JSON.parse(fixed) }
     catch (e) {
-      const fixed = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1')
-      try { return JSON.parse(fixed) }
-      catch (e2) { return JSON.parse(jsonMatch[0]) }
+      // Last resort: strip all non-ASCII
+      const clean = fixed.replace(/[^\x20-\x7E\n\r\t{}[],:""-]/g, '')
+      try { return JSON.parse(clean) }
+      catch (e2) {
+        throw new Error('Recipe parse error — try copying the text more carefully')
+      }
     }
   })
 }
