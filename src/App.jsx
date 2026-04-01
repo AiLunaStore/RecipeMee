@@ -290,24 +290,34 @@ export default function App() {
         setFetchingTranscript(true)
         try {
           const videoId = extractVideoId(textToParse)
-          if (!videoId) throw new Error('Could not extract video ID')
-          textToParse = await fetchYouTubeTranscriptBrowser(videoId)
+          if (!videoId) throw new Error('Could not extract video ID from this YouTube URL')
+          const description = await fetchYouTubeTranscriptBrowser(videoId)
+          textToParse = description
         } catch (e) {
-          throw new Error('YouTube fetch failed: ' + e.message)
-        } finally { setFetchingTranscript(false) }
+          setFetchingTranscript(false)
+          setError(e.message)
+          setLoading(false)
+          return
+        }
+        setFetchingTranscript(false)
       } else if (textToParse.startsWith('http://') || textToParse.startsWith('https://')) {
         // Generic URL — fetch page content
         setFetchingTranscript(true)
         try {
           const pageText = await fetchRecipeURL(textToParse)
           if (!pageText || pageText.length < 100) {
-            throw new Error('Could not extract text from this URL. Try copying the recipe text instead.')
+            throw new Error('Could not read this page. Try copying the recipe text manually instead.')
           }
           textToParse = pageText
         } catch (e) {
-          throw new Error('URL fetch failed: ' + e.message)
-        } finally { setFetchingTranscript(false) }
+          setFetchingTranscript(false)
+          setError(e.message)
+          setLoading(false)
+          return
+        }
+        setFetchingTranscript(false)
       }
+      // Plain text — use as-is
 
       const result = await parseRecipeWithLLM(textToParse)
       setParsed(result)
