@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
 // The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
 const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
 const MODEL = 'minimax-m2'
+const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 
 function isYouTubeURL(text) {
   return /youtube\.com|youtu\.be/.test(text)
@@ -22,11 +23,7 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscriptBrowser(videoId) {
-  // Use YouTube Data API from the browser - user's IP, no blocking
-  // API key is restricted to this domain only
-
   try {
-    // Step 1: Get video to check if it has captions
     const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
     const detailsRes = await fetch(detailsUrl)
     if (!detailsRes.ok) throw new Error('YouTube API unavailable')
@@ -37,34 +34,13 @@ async function fetchYouTubeTranscriptBrowser(videoId) {
     }
 
     const video = details.items[0]
-    const hasCaption = video.contentDetails?.caption === 'true'
-
-    // Get video description as fallback
     const description = video.snippet?.description || ''
 
-    if (!hasCaption && description.length < 50) {
-      throw new Error('This video has no captions and no description. Try a cooking channel video with closed captions.')
-    }
-
-    // Return description for now - it often contains the recipe
     if (description.length > 50) {
       return description
     }
-
-    throw new Error('Could not extract text from this video.')
+    throw new Error('No description found for this video.')
   } catch (e) {
-    // Fallback to our Cloudflare Worker
-    try {
-      const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/youtube-transcript?videoId=${videoId}`
-      const response = await fetch(proxyUrl)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.transcript && data.transcript.length > 30) return data.transcript
-        if (data.error) throw new Error(data.error)
-      }
-    } catch (workerErr) {
-      // Worker failed too
-    }
     throw new Error(e.message || 'YouTube transcript fetch failed')
   }
 }
@@ -106,23 +82,62 @@ Return ONLY the JSON object, nothing else. If a field is unknown, omit it or use
   .then(r => r.json())
   .then(data => {
     const content = data.choices?.[0]?.message?.content || ''
-    // Try multiple JSON extraction strategies
-    let jsonMatch = content.match(/\{[\s\S]*?\}/s) // non-greedy
-    if (!jsonMatch) jsonMatch = content.match(/\{[\s\S]*\}/) // greedy fallback
+    let jsonMatch = content.match(/\{[\s\S]*?\}/s)
+    if (!jsonMatch) jsonMatch = content.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('No JSON found in response: ' + content.substring(0, 100))
     try {
       return JSON.parse(jsonMatch[0])
     } catch (e) {
-      // Try to fix common JSON issues (trailing commas, etc.)
       const fixed = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1')
       return JSON.parse(fixed)
     }
   })
 }
 
+// Backup/Sync functions
+async function backupToNAS(recipes) {
+  try {
+    const response = await fetch(NAS_BACKUP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipes,
+        lastUpdated: new Date().toISOString(),
+        deviceId: 'iphone-' + navigator.userAgent.substring(0, 20)
+      })
+    })
+    if (!response.ok) throw new Error('Backup failed')
+    return await response.json()
+  } catch (e) {
+    console.error('Backup error:', e)
+    throw e
+  }
+}
+
+async function restoreFromNAS() {
+  try {
+    const response = await fetch(NAS_BACKUP_URL)
+    if (!response.ok) throw new Error('Restore failed')
+    const data = await response.json()
+    return data
+  } catch (e) {
+    console.error('Restore error:', e)
+    throw e
+  }
+}
+
+function getDeviceId() {
+  let id = localStorage.getItem('recipemee_device_id')
+  if (!id) {
+    id = 'device_' + Math.random().toString(36).substr(2, 9)
+    localStorage.setItem('recipemee_device_id', id)
+  }
+  return id
+}
+
 function App() {
-  const [view, setView] = useState('add') // 'add' | 'library'
-  const [inputType, setInputType] = useState('text') // 'text' | 'url'
+  const [view, setView] = useState('add')
+  const [inputType, setInputType] = useState('text')
   const [rawText, setRawText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -131,13 +146,78 @@ function App() {
   const [search, setSearch] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
   const [fetchingTranscript, setFetchingTranscript] = useState(false)
+  const [syncStatus, setSyncStatus] = useState('') // '' | 'syncing' | 'saved' | 'restored' | 'error'
+  const [lastSync, setLastSync] = useState(localStorage.getItem('recipemee_last_sync') || '')
+  const [nasCount, setNasCount] = useState(null)
+  const syncTimerRef = useRef(null)
 
+  // Load recipes from localStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('recipemee_recipes')
     if (saved) setRecipes(JSON.parse(saved))
+    checkNASCount()
   }, [])
 
-  const handleParse = async () => {
+  // Auto-backup whenever recipes change (debounced)
+  useEffect(() => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(() => {
+      if (recipes.length > 0) {
+        autoBackup()
+      }
+    }, 5000) // 5 second debounce
+    return () => clearTimeout(syncTimerRef.current)
+  }, [recipes])
+
+  async function checkNASCount() {
+    try {
+      const data = await restoreFromNAS()
+      setNasCount(data.count || 0)
+    } catch (e) {
+      setNasCount(null)
+    }
+  }
+
+  async function autoBackup() {
+    try {
+      setSyncStatus('syncing')
+      await backupToNAS(recipes)
+      setSyncStatus('saved')
+      const now = new Date().toLocaleTimeString()
+      setLastSync(now)
+      localStorage.setItem('recipemee_last_sync', now)
+      checkNASCount()
+      setTimeout(() => setSyncStatus(''), 2000)
+    } catch (e) {
+      setSyncStatus('error')
+      setTimeout(() => setSyncStatus(''), 3000)
+    }
+  }
+
+  async function handleRestore() {
+    if (!window.confirm('This will replace your current recipes with the backup. Continue?')) return
+    try {
+      setSyncStatus('syncing')
+      const data = await restoreFromNAS()
+      if (data.recipes && data.recipes.length > 0) {
+        setRecipes(data.recipes)
+        localStorage.setItem('recipemee_recipes', JSON.stringify(data.recipes))
+        setSyncStatus('restored')
+        setLastSync(data.lastBackup ? new Date(data.lastBackup).toLocaleString() : '')
+        checkNASCount()
+        setTimeout(() => setSyncStatus(''), 2000)
+      } else {
+        alert('No recipes found in backup.')
+        setSyncStatus('')
+      }
+    } catch (e) {
+      alert('Restore failed: ' + e.message)
+      setSyncStatus('error')
+      setTimeout(() => setSyncStatus(''), 3000)
+    }
+  }
+
+  async function handleParse() {
     if (!rawText.trim()) return
     setLoading(true)
     setError('')
@@ -146,7 +226,6 @@ function App() {
     try {
       let textToParse = rawText.trim()
 
-      // Detect YouTube URL
       if (isYouTubeURL(textToParse)) {
         setFetchingTranscript(true)
         try {
@@ -154,11 +233,11 @@ function App() {
           if (!videoId) throw new Error('Could not extract video ID from URL')
           const transcript = await fetchYouTubeTranscriptBrowser(videoId)
           if (!transcript || transcript.length < 50) {
-            throw new Error('No transcript available for this video. Try a different video or paste the recipe text instead.')
+            throw new Error('No description available for this video.')
           }
           textToParse = transcript
         } catch (e) {
-          throw new Error('YouTube transcript failed: ' + e.message)
+          throw new Error('YouTube fetch failed: ' + e.message)
         } finally {
           setFetchingTranscript(false)
         }
@@ -189,6 +268,8 @@ function App() {
     setRawText('')
     setParsed(null)
     setView('library')
+    // Trigger immediate backup
+    autoBackup()
   }
 
   const handleDelete = (id) => {
@@ -206,6 +287,14 @@ function App() {
     )
   })
 
+  const syncStatusText = {
+    '': '',
+    'syncing': '🔄 Syncing...',
+    'saved': '✅ Backed up',
+    'restored': '✅ Restored',
+    'error': '❌ Sync failed'
+  }[syncStatus]
+
   return (
     <div style={styles.container}>
       <header style={styles.header}>
@@ -217,6 +306,16 @@ function App() {
           </button>
         </div>
       </header>
+
+      {syncStatusText && (
+        <div style={{
+          ...styles.syncBanner,
+          ...(syncStatus === 'error' ? styles.syncError : {}),
+          ...(syncStatus === 'saved' || syncStatus === 'restored' ? styles.syncSuccess : {})
+        }}>
+          {syncStatusText}
+        </div>
+      )}
 
       {view === 'add' ? (
         <div style={styles.card}>
@@ -242,7 +341,7 @@ function App() {
             onClick={handleParse}
             disabled={loading || !rawText.trim() || fetchingTranscript}
           >
-            {fetchingTranscript ? 'Fetching transcript...' : loading ? 'Parsing...' : isYouTubeURL(rawText) ? '🎬 Parse YouTube Recipe' : 'Parse Recipe'}
+            {fetchingTranscript ? 'Fetching description...' : loading ? 'Parsing...' : isYouTubeURL(rawText) ? '🎬 Parse YouTube Recipe' : 'Parse Recipe'}
           </button>
 
           {parsed && (
@@ -269,12 +368,25 @@ function App() {
         </div>
       ) : (
         <div>
-          <input
-            style={styles.search}
-            placeholder="Search recipes, ingredients, tags..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <div style={styles.syncRow}>
+            <input
+              style={styles.search}
+              placeholder="Search recipes, ingredients, tags..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <div style={styles.syncActions}>
+              {lastSync && <span style={styles.lastSync}>Synced {lastSync}</span>}
+              <button style={styles.restoreBtn} onClick={handleRestore} title="Restore from NAS backup">
+                ↩️ Restore
+              </button>
+            </div>
+          </div>
+          {nasCount !== null && (
+            <div style={styles.nasInfo}>
+              {nasCount > 0 ? `${nasCount} recipes in backup` : 'No backup yet'}
+            </div>
+          )}
           {filtered.length === 0 ? (
             <div style={styles.empty}>
               {recipes.length === 0 ? 'No recipes saved yet.' : 'No recipes match your search.'}
@@ -330,6 +442,9 @@ const styles = {
   tabs: { display: 'flex', gap: '8px' },
   tab: { padding: '8px 16px', border: 'none', borderRadius: '8px', background: '#e0e0e0', cursor: 'pointer', fontSize: '14px' },
   tabActive: { background: '#333', color: '#fff' },
+  syncBanner: { textAlign: 'center', padding: '8px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', background: '#f0f0f0', color: '#666' },
+  syncError: { background: '#fee2e2', color: '#dc2626' },
+  syncSuccess: { background: '#dcfce7', color: '#16a34a' },
   card: { background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' },
   inputTypeToggle: { display: 'flex', gap: '8px', marginBottom: '16px' },
   toggleBtn: { padding: '6px 14px', border: '2px solid #ddd', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontSize: '13px' },
@@ -343,7 +458,12 @@ const styles = {
   meta: { display: 'flex', gap: '16px', marginBottom: '16px', fontSize: '14px', color: '#555' },
   list: { paddingLeft: '24px', lineHeight: '1.7', fontSize: '14px' },
   saveBtn: { marginTop: '20px', width: '100%', padding: '14px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '16px', cursor: 'pointer', fontWeight: '600' },
-  search: { width: '100%', padding: '12px', borderRadius: '10px', border: '2px solid #ddd', fontSize: '15px', marginBottom: '20px', boxSizing: 'border-box' },
+  syncRow: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '8px' },
+  syncActions: { display: 'flex', gap: '8px', alignItems: 'center' },
+  lastSync: { fontSize: '12px', color: '#999', whiteSpace: 'nowrap' },
+  restoreBtn: { padding: '8px 12px', background: '#f0f0f0', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', whiteSpace: 'nowrap' },
+  nasInfo: { fontSize: '12px', color: '#999', marginBottom: '12px' },
+  search: { flex: '1 1 100%', padding: '12px', borderRadius: '10px', border: '2px solid #ddd', fontSize: '15px', boxSizing: 'border-box' },
   empty: { textAlign: 'center', color: '#999', padding: '40px', fontSize: '15px' },
   grid: { display: 'flex', flexDirection: 'column', gap: '12px' },
   recipeCard: { background: '#fff', borderRadius: '14px', padding: '18px', boxShadow: '0 2px 8px rgba(0,0,0,0.07)', textAlign: 'left' },

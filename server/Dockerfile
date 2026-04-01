@@ -5,8 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY youtube_transcript_server.py .
+COPY backup_server.py .
 
 EXPOSE 8765
 
-CMD ["python", "youtube_transcript_server.py"]
+CMD ["python", "backup_server.py"]
