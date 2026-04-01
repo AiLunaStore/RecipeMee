@@ -42,11 +42,17 @@ Return ONLY the JSON object, nothing else. If a field is unknown, omit it or use
   .then(r => r.json())
   .then(data => {
     const content = data.choices?.[0]?.message?.content || ''
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
+    // Try multiple JSON extraction strategies
+    let jsonMatch = content.match(/\{[\s\S]*?\}/s) // non-greedy
+    if (!jsonMatch) jsonMatch = content.match(/\{[\s\S]*\}/) // greedy fallback
+    if (!jsonMatch) throw new Error('No JSON found in response: ' + content.substring(0, 100))
+    try {
       return JSON.parse(jsonMatch[0])
+    } catch (e) {
+      // Try to fix common JSON issues (trailing commas, etc.)
+      const fixed = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1')
+      return JSON.parse(fixed)
     }
-    throw new Error('Could not parse recipe')
   })
 }
 
