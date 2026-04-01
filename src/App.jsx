@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 
-const API_KEY = import.meta.env.VITE_MINIMAX_API_KEY || ''
+// Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
+// The key lives in the Cloudflare Worker secret, not in client-side code.
+const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
 const MODEL = 'MiniMax/MiniMax-Text-01'
 
 function parseRecipeWithLLM(rawText) {
-  return fetch('https://api.minimax.io/v1/text/chatcompletion_v2', {
+  return fetch(WORKER_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -68,7 +70,7 @@ function App() {
   const handleParse = async () => {
     if (!rawText.trim()) return
     if (!API_KEY) {
-      setError('Missing VITE_MINIMAX_API_KEY in .env file')
+      setError('Worker unavailable — please try again')
       return
     }
     setLoading(true)
