@@ -1,0 +1,17 @@
+{
+  "name": "RecipeMee",
+  "short_name": "RecipeMee",
+  "description": "Paste a recipe URL or text — get structured JSON you can save and search",
+  "start_url": "/RecipeMee/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
