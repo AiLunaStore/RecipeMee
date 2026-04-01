@@ -68,7 +68,10 @@ async function fetchRecipeURL(pageUrl) {
   }
   const data = await response.json()
   if (data.error) throw new Error(data.error)
-  return data.text || ''
+
+  // Limit text to 8000 chars to avoid overwhelming the LLM
+  let text = (data.text || '').substring(0, 8000)
+  return text
 }
 
 function parseRecipeWithLLM(rawText) {
@@ -77,7 +80,7 @@ function parseRecipeWithLLM(rawText) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 2500,
+      max_tokens: 4000,
       temperature: 0.2,
       messages: [{
         role: 'system',
@@ -136,7 +139,21 @@ Return ONLY the JSON, nothing else.`
       }
     }
 
-    if (!jsonStr) throw new Error('Could not parse recipe — try pasting the text directly')
+    if (!jsonStr) {
+      // Return a minimal valid recipe so user doesn't lose their data
+      return {
+        title: 'Untitled Recipe',
+        description: content.substring(0, 200),
+        servings: '4 servings',
+        prepTime: null,
+        cookTime: null,
+        totalTime: null,
+        ingredients: [],
+        instructions: [],
+        tags: [],
+        photoUrl: ''
+      }
+    }
 
     // Fix common JSON issues
     let fixed = jsonStr
@@ -150,7 +167,24 @@ Return ONLY the JSON, nothing else.`
       const clean = fixed.replace(/[^\x20-\x7E\n\r\t{}[],:""-]/g, '')
       try { return JSON.parse(clean) }
       catch (e2) {
-        throw new Error('Recipe parse error — try copying the text more carefully')
+        // If content is too long, try with just the first valid portion
+        const titleMatch = content.match(/"title":\s*"([^"]+)"/)
+        const descMatch = content.match(/"description":\s*"([^"]+)"/)
+        if (titleMatch || descMatch) {
+          return {
+            title: titleMatch ? titleMatch[1] : 'Untitled Recipe',
+            description: descMatch ? descMatch[1] : '',
+            servings: '4 servings',
+            prepTime: null,
+            cookTime: null,
+            totalTime: null,
+            ingredients: [],
+            instructions: [],
+            tags: [],
+            photoUrl: ''
+          }
+        }
+        throw new Error('Recipe parse error — the text may not be a standard recipe format')
       }
     }
   })
@@ -323,6 +357,9 @@ export default function App() {
           const videoId = extractVideoId(textToParse)
           if (!videoId) throw new Error('Could not extract video ID from this YouTube URL')
           const description = await fetchYouTubeTranscriptBrowser(videoId)
+          if (!description || description.length < 50) {
+            throw new Error('This video has no description. Try copying the recipe text manually.')
+          }
           textToParse = description
         } catch (e) {
           setFetchingTranscript(false)
