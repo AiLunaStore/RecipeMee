@@ -271,7 +271,6 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('')
   const [lastSync, setLastSync] = useState(localStorage.getItem('recipemee_last_sync') || '')
   const [nasCount, setNasCount] = useState(null)
-  const [selectedTags, setSelectedTags] = useState([])
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [selectedRecipe, setSelectedRecipe] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -528,13 +527,11 @@ export default function App() {
     filtered = filtered.filter(r =>
       r.title?.toLowerCase().includes(q) ||
       r.ingredients?.some(i => (typeof i === 'string' ? i : i.text || '').toLowerCase().includes(q)) ||
-      r.tags?.some(t => t.toLowerCase().includes(q))
+      r.tags?.some(t => t.toLowerCase().includes(q)) ||
+      (r.description || '').toLowerCase().includes(q)
     )
   }
   if (showFavoritesOnly) filtered = filtered.filter(r => r.favorite)
-  if (selectedTags.length > 0) {
-    filtered = filtered.filter(r => selectedTags.some(t => r.tags?.includes(t)))
-  }
 
   // Serving scale
   let scaledIngredients = parsed?.ingredients || []
@@ -590,40 +587,22 @@ export default function App() {
           <div>
             <div style={styles.searchWrapper}>
               <span style={styles.searchIcon}>🔍</span>
-              <input style={styles.searchInput} placeholder="Search recipes, ingredients..." value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-
-            {/* Filter Row — horizontally scrollable */}
-            <div style={styles.filterRow}>
-              <button
-                style={{ ...styles.filterChip, ...(showFavoritesOnly ? styles.filterChipActive : {}) }}
-                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-              >
-                ♥ Favorites
-              </button>
-              {ALL_TAGS.map(tag => (
-                <button
-                  key={tag}
-                  style={{ ...styles.filterChip, ...(selectedTags.includes(tag) ? styles.filterChipActive : {}) }}
-                  onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
-                >
-                  {tag}
-                </button>
-              ))}
-              {(showFavoritesOnly || selectedTags.length > 0) && (
-                <button style={styles.clearFilterBtn} onClick={() => { setShowFavoritesOnly(false); setSelectedTags([]) }}>
-                  ✕
-                </button>
-              )}
+              <input style={styles.searchInput} placeholder="Search recipes, ingredients, tags..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
             {/* NAS Bar */}
             <div style={styles.nasBar}>
-              <span style={{ flex: 1, fontSize: '13px', color: COLORS.textSecondary }}>
+              <button
+                style={{ ...styles.favToggle, color: showFavoritesOnly ? COLORS.star : COLORS.textMuted }}
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+              >
+                ♥ Favorites {showFavoritesOnly ? 'On' : ''}
+              </button>
+              <span style={{ flex: 1, fontSize: '13px', color: COLORS.textSecondary, textAlign: 'center' }}>
                 {nasCount !== null ? (nasCount > 0 ? `${nasCount} backed up` : 'No backup yet') : '...'}
               </span>
               {lastSync && <span style={{ fontSize: '12px', color: COLORS.textMuted }}>Synced {lastSync}</span>}
-              <button style={styles.restoreBtnSmall} onClick={handleRestore}>↩ Restore</button>
+              <button style={styles.restoreBtnSmall} onClick={handleRestore}>↩</button>
             </div>
 
             {filtered.length === 0 ? (
@@ -1032,7 +1011,8 @@ const styles = {
   filterChipActive: { background: COLORS.primary, borderColor: COLORS.primary, color: COLORS.text },
   clearFilterBtn: { padding: '6px 10px', background: 'transparent', border: 'none', color: COLORS.error, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 },
   nasBar: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', padding: '10px 14px', background: COLORS.surface, borderRadius: '10px', fontSize: '13px', color: COLORS.textSecondary, flexWrap: 'wrap' },
-  restoreBtnSmall: { background: 'transparent', border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' },
+  restoreBtnSmall: { background: 'transparent', border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary, padding: '6px 10px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' },
+  favToggle: { background: 'transparent', border: 'none', fontSize: '13px', cursor: 'pointer', padding: '4px 8px', fontWeight: 500 },
   grid: { display: 'flex', flexDirection: 'column', gap: '12px' },
   emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' },
   primaryBtn: { width: '100%', padding: '16px', background: COLORS.primary, color: COLORS.text, border: 'none', borderRadius: '14px', fontSize: '16px', fontWeight: 600, cursor: 'pointer' },
