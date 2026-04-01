@@ -3,7 +3,33 @@ import { useState, useEffect } from 'react'
 // Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
 // The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
+const TRANSCRIPT_API = 'https://levin-nas-1.tail065159.ts.net/youtube-transcript'
 const MODEL = 'minimax-m2'
+
+function isYouTubeURL(text) {
+  return /youtube\.com|youtu\.be/.test(text)
+}
+
+function extractVideoId(url) {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]
+  }
+  return null
+}
+
+async function fetchYouTubeTranscript(url) {
+  const response = await fetch(`${TRANSCRIPT_API}?url=${encodeURIComponent(url)}`)
+  if (!response.ok) {
+    const err = await response.json()
+    throw new Error(err.error || 'Failed to fetch transcript')
+  }
+  const data = await response.json()
+  return data.transcript
+}
 
 function parseRecipeWithLLM(rawText) {
   return fetch(WORKER_URL, {
@@ -66,6 +92,7 @@ function App() {
   const [recipes, setRecipes] = useState([])
   const [search, setSearch] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
+  const [fetchingTranscript, setFetchingTranscript] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('recipemee_recipes')
@@ -77,13 +104,30 @@ function App() {
     setLoading(true)
     setError('')
     setParsed(null)
+
     try {
-      const result = await parseRecipeWithLLM(rawText)
+      let textToParse = rawText.trim()
+
+      // Detect YouTube URL
+      if (isYouTubeURL(textToParse)) {
+        setFetchingTranscript(true)
+        try {
+          const transcript = await fetchYouTubeTranscript(textToParse)
+          textToParse = transcript
+        } catch (e) {
+          throw new Error('YouTube transcript failed: ' + e.message)
+        } finally {
+          setFetchingTranscript(false)
+        }
+      }
+
+      const result = await parseRecipeWithLLM(textToParse)
       setParsed(result)
     } catch (e) {
       setError('Parse failed: ' + e.message)
     } finally {
       setLoading(false)
+      setFetchingTranscript(false)
     }
   }
 
@@ -135,12 +179,14 @@ function App() {
         <div style={styles.card}>
           <div style={styles.inputTypeToggle}>
             <button style={{ ...styles.toggleBtn, ...(inputType === 'text' ? styles.toggleActive : {}) }} onClick={() => setInputType('text')}>Paste Text</button>
-            <button style={{ ...styles.toggleBtn, ...(inputType === 'url' ? styles.toggleActive : {}) }} onClick={() => setInputType('url')}>Recipe URL</button>
+            <button style={{ ...styles.toggleBtn, ...(inputType === 'url' ? styles.toggleActive : {}) }} onClick={() => setInputType('url')}>Recipe URL / YouTube</button>
           </div>
 
           <textarea
             style={styles.textarea}
-            placeholder={inputType === 'url' ? 'Paste recipe URL...\nhttps://example.com/recipe/...' : 'Paste recipe text here...\nCopy from any website, blog, or document.'}
+            placeholder={inputType === 'url'
+              ? 'Paste a recipe URL or YouTube video link...\nhttps://youtube.com/...'
+              : 'Paste recipe text here...\nCopy from any website, blog, or document.'}
             value={rawText}
             onChange={e => setRawText(e.target.value)}
             rows={10}
@@ -148,8 +194,12 @@ function App() {
 
           {error && <div style={styles.error}>{error}</div>}
 
-          <button style={styles.parseBtn} onClick={handleParse} disabled={loading || !rawText.trim()}>
-            {loading ? 'Parsing...' : 'Parse Recipe'}
+          <button
+            style={styles.parseBtn}
+            onClick={handleParse}
+            disabled={loading || !rawText.trim() || fetchingTranscript}
+          >
+            {fetchingTranscript ? 'Fetching transcript...' : loading ? 'Parsing...' : isYouTubeURL(rawText) ? '🎬 Parse YouTube Recipe' : 'Parse Recipe'}
           </button>
 
           {parsed && (
