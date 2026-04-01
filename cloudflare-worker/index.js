@@ -1,10 +1,11 @@
 /**
- * RecipeMee YouTube Transcript Worker (JavaScript)
- * Fetches YouTube video transcripts using YouTube's internal transcript API.
+ * RecipeMee YouTube Transcript Worker - Fallback
+ * When YouTube blocks direct access, this returns video description as fallback.
+ * Uses YouTube Data API to get video metadata.
  */
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request) {
     const url = new URL(request.url)
 
     if (request.method === 'OPTIONS') {
@@ -12,7 +13,6 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
         }
       })
     }
@@ -23,17 +23,31 @@ export default {
         return jsonResponse({ error: 'Missing videoId parameter' }, 400)
       }
 
+      // Use YouTube Data API v3 - reliable, no blocking from browser
+      const apiUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
+
       try {
-        const transcript = await getYouTubeTranscript(videoId)
+        const response = await fetch(apiUrl)
+        const data = await response.json()
+
+        if (!data.items?.length) {
+          return jsonResponse({ error: 'Video not found', transcript: '' }, 404)
+        }
+
+        const video = data.items[0]
+        const description = video.snippet?.description || ''
+        const hasCaption = video.contentDetails?.caption === 'true'
+        const title = video.snippet?.title || ''
+
         return jsonResponse({
           videoId,
-          transcript,
-          language: 'en',
+          title,
+          transcript: description,
+          hasCaption,
+          type: description.length > 50 ? 'description' : 'none',
         })
       } catch (e) {
-        return jsonResponse({
-          error: e.message || 'No transcript available for this video.',
-        }, 500)
+        return jsonResponse({ error: e.message, transcript: '' }, 500)
       }
     }
 
@@ -41,79 +55,7 @@ export default {
   }
 }
 
-async function getYouTubeTranscript(videoId) {
-  // First, get the video page to extract the innertube API key
-  const videoPageUrl = `https://www.youtube.com/watch?v=${videoId}&hl=en`
-  const videoPage = await fetch(videoPageUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    }
-  })
-  const pageText = await videoPage.text()
-
-  // Extract innertube API key and video details
-  const apiKeyMatch = pageText.match(/"INNERTUBE_API_KEY":"([^"]+)"/)
-  const apiKey = apiKeyMatch ? apiKeyMatch[1] : 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8'
-
-  // Extract transcript data from YouTube's transcript endpoint
-  const transcriptUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=json`
-  const transcriptResponse = await fetch(transcriptUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-    }
-  })
-
-  if (transcriptResponse.ok) {
-    const transcriptData = await transcriptResponse.json()
-    if (transcriptData && transcriptData.events) {
-      const textParts = transcriptData.events
-        .filter(event => event.segs)
-        .flatMap(event => event.segs.map(seg => seg.utf8 || ''))
-        .join(' ')
-        .replace(/\n+/g, ' ')
-        .trim()
-      if (textParts.length > 20) return textParts
-    }
-  }
-
-  // Fallback: try caption via innertube API
-  try {
-    const captionUrl = `https://www.youtube.com/youtubei/v1/get_transcript?key=${apiKey}`
-    const captionResponse = await fetch(captionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0',
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20240101.00.00',
-          }
-        },
-        params: 'Cg0KAhhEOkxRYUNnPTQ=',
-        videoId,
-      })
-    })
-
-    if (captionResponse.ok) {
-      const data = await captionResponse.json()
-      const transcripts = data.actions?.[0]?.updateEngageabilityPanel?.engageability?.subscribeVideoEngageabilityPanel?.microformat?.playerMicroformatRenderer
-      // Parse transcript from response
-      const body = JSON.stringify(data)
-      const textMatches = body.match(/"text":"([^"\\]*(?:\\.[^"\\]*)*)"/g)
-      if (textMatches && textMatches.length > 0) {
-        const text = textMatches.map(m => m.match(/"text":"([^"]*)"/)[1]).join(' ')
-        if (text.length > 20) return text
-      }
-    }
-  } catch (e) {
-    // Fall through to error
-  }
-
-  throw new Error('No transcript available for this video. The video may not have closed captions.')
-}
+const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 // Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
 // The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
+const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
 const MODEL = 'minimax-m2'
 
 function isYouTubeURL(text) {
@@ -21,17 +22,51 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscriptBrowser(videoId) {
-  // Use the dedicated Cloudflare Worker to fetch YouTube transcripts
-  // Worker runs at Cloudflare edge (not NAS IP), so YouTube doesn't block it
-  const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/youtube-transcript?videoId=${videoId}`
-  const response = await fetch(proxyUrl)
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(err.error || 'Transcript fetch failed')
+  // Use YouTube Data API from the browser - user's IP, no blocking
+  // API key is restricted to this domain only
+
+  try {
+    // Step 1: Get video to check if it has captions
+    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
+    const detailsRes = await fetch(detailsUrl)
+    if (!detailsRes.ok) throw new Error('YouTube API unavailable')
+    const details = await detailsRes.json()
+
+    if (!details.items?.length) {
+      throw new Error('Video not found or not accessible')
+    }
+
+    const video = details.items[0]
+    const hasCaption = video.contentDetails?.caption === 'true'
+
+    // Get video description as fallback
+    const description = video.snippet?.description || ''
+
+    if (!hasCaption && description.length < 50) {
+      throw new Error('This video has no captions and no description. Try a cooking channel video with closed captions.')
+    }
+
+    // Return description for now - it often contains the recipe
+    if (description.length > 50) {
+      return description
+    }
+
+    throw new Error('Could not extract text from this video.')
+  } catch (e) {
+    // Fallback to our Cloudflare Worker
+    try {
+      const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/youtube-transcript?videoId=${videoId}`
+      const response = await fetch(proxyUrl)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.transcript && data.transcript.length > 30) return data.transcript
+        if (data.error) throw new Error(data.error)
+      }
+    } catch (workerErr) {
+      // Worker failed too
+    }
+    throw new Error(e.message || 'YouTube transcript fetch failed')
   }
-  const data = await response.json()
-  if (data.error) throw new Error(data.error)
-  return data.transcript
 }
 
 function parseRecipeWithLLM(rawText) {
