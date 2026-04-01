@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RecipeMee</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f5f5f5;font-family:system-ui,sans-serif}.container{max-width:800px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}.title{font-size:28px;margin:0}.tabs{display:flex;gap:8px}.tab{padding:8px 16px;border:none;border-radius:8px;background:#e0e0e0;cursor:pointer;font-size:14px}.tabActive{background:#333;color:#fff}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}.toggle-group{display:flex;gap:8px;margin-bottom:16px}.toggle-btn{padding:6px 14px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px}.toggle-active{border-color:#333;background:#333;color:#fff}.textarea{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:14px;font-family:inherit;resize:vertical}.error{color:#dc2626;padding:10px;background:#fee2e2;border-radius:8px;margin-top:12px;font-size:14px}.parse-btn{margin-top:14px;width:100%;padding:14px;background:#333;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.parse-btn:disabled{opacity:0.5;cursor:not-allowed}.preview{margin-top:24px;padding:20px;background:#f8f9fa;border-radius:12px;border:2px solid #e0e0e0;text-align:left}.preview h2{margin:0 0 8px;font-size:22px}.preview p{color:#666;margin:0 0 12px;font-size:14px}.meta{display:flex;gap:16px;margin-bottom:16px;font-size:14px;color:#555}.preview ul,.preview ol{padding-left:24px;line-height:1.7;font-size:14px}.save-btn{margin-top:20px;width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.search{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:15px;margin-bottom:20px}.empty{text-align:center;color:#999;padding:40px;font-size:15px}.recipe-card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,0.07);text-align:left;margin-bottom:12px}.card-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer}.card-title{margin:0;font-size:18px}.expand-icon{font-size:12px;color:#999}.card-desc{margin:8px 0;color:#666;font-size:13px}.card-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:13px;color:#777;margin-top:8px}.tag{background:#f0f0f0;padding:2px 8px;border-radius:6px}.card-body{margin-top:16px;border-top:1px solid #eee;padding-top:16px}.delete-btn{margin-top:12px;padding:8px 14px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:13px}
+*{box-sizing:border-box}body{margin:0;background:#f5f5f5;font-family:system-ui,sans-serif}.container{max-width:800px;margin:0 auto;padding:20px}.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}.title{font-size:28px;margin:0}.tabs{display:flex;gap:8px}.tab{padding:8px 16px;border:none;border-radius:8px;background:#e0e0e0;cursor:pointer;font-size:14px}.tabActive{background:#333;color:#fff}.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}.toggle-group{display:flex;gap:8px;margin-bottom:16px}.toggle-btn{padding:6px 14px;border:2px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:13px}.toggle-active{border-color:#333;background:#333;color:#fff}.textarea{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:14px;font-family:inherit;resize:vertical;box-sizing:border-box}.error{color:#dc2626;padding:10px;background:#fee2e2;border-radius:8px;margin-top:12px;font-size:14px}.parse-btn{margin-top:14px;width:100%;padding:14px;background:#333;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.parse-btn:disabled{opacity:0.5;cursor:not-allowed}.preview{margin-top:24px;padding:20px;background:#f8f9fa;border-radius:12px;border:2px solid #e0e0e0;text-align:left}.preview h2{margin:0 0 8px;font-size:22px}.preview p{color:#666;margin:0 0 12px;font-size:14px}.meta{display:flex;gap:16px;margin-bottom:16px;font-size:14px;color:#555}.preview ul,.preview ol{padding-left:24px;line-height:1.7;font-size:14px}.save-btn{margin-top:20px;width:100%;padding:14px;background:#16a34a;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:600}.search{width:100%;padding:12px;border-radius:10px;border:2px solid #ddd;font-size:15px;margin-bottom:20px;box-sizing:border-box}.empty{text-align:center;color:#999;padding:40px;font-size:15px}.recipe-card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,0.07);text-align:left;margin-bottom:12px}.card-header{display:flex;justify-content:space-between;align-items:center;cursor:pointer}.card-title{margin:0;font-size:18px}.expand-icon{font-size:12px;color:#999}.card-desc{margin:8px 0;color:#666;font-size:13px}.card-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:13px;color:#777;margin-top:8px}.tag{background:#f0f0f0;padding:2px 8px;border-radius:6px}.card-body{margin-top:16px;border-top:1px solid #eee;padding-top:16px}.delete-btn{margin-top:12px;padding:8px 14px;background:#fee2e2;color:#dc2626;border:none;border-radius:8px;cursor:pointer;font-size:13px}
 </style>
 </head>
 <body>
@@ -16,45 +16,63 @@
 (function() {
 'use strict';
 
-// Worker URL — API key is hidden in the Cloudflare Worker, not in browser code
 var WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat';
 var MODEL = 'minimax-m2';
 
-var useState = React.useState;
-var useEffect = React.useEffect;
-var useCallback = React.useCallback;
+// ── helpers ──────────────────────────────────────────────────────────
+function El(tag, props, ...children) {
+  return React.createElement(tag, props, ...children.filter(Boolean));
+}
 
+// ── RecipeCard ──────────────────────────────────────────────────────
+function RecipeCard(props) {
+  var recipe = props.recipe, onDelete = props.onDelete;
+  var open = React.useState(false);
+  return El('div', { className: 'recipe-card' },
+    El('div', { className: 'card-header', onClick: function() { open[1](!open[0]); } },
+      El('h3', { className: 'card-title' }, recipe.title || 'Untitled'),
+      El('span', { className: 'expand-icon' }, open[0] ? '▲' : '▼')
+    ),
+    recipe.description && El('p', { className: 'card-desc' }, recipe.description),
+    El('div', { className: 'card-meta' },
+      recipe.servings && El('span', null, '🍽 ' + recipe.servings),
+      recipe.totalTime && El('span', null, '⏱ ' + recipe.totalTime),
+      recipe.tags && recipe.tags.map(function(t) { return El('span', { key: t, className: 'tag' }, t); })
+    ),
+    open[0] && El('div', { className: 'card-body' },
+      El('h4', null, 'Ingredients'),
+      El('ul', null, recipe.ingredients && recipe.ingredients.map(function(i, idx) { return El('li', {key: idx}, i); })),
+      El('h4', null, 'Instructions'),
+      El('ol', null, recipe.instructions && recipe.instructions.map(function(s, idx) { return El('li', {key: idx}, s); })),
+      El('button', { className: 'delete-btn', onClick: function() { onDelete(recipe.id); } }, '🗑 Delete')
+    )
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────
 function App() {
-  var view = useState('add')[0];
-  var setView = useState('add')[1];
-  var inputType = useState('text')[0];
-  var setInputType = useState('text')[1];
-  var rawText = useState('')[0];
-  var setRawText = useState('')[1];
-  var loading = useState(false)[0];
-  var setLoading = useState(false)[1];
-  var error = useState('')[0];
-  var setError = useState('')[1];
-  var parsed = useState(null)[0];
-  var setParsed = useState(null)[1];
-  var recipes = useState([])[0];
-  var setRecipes = useState([])[1];
-  var search = useState('')[0];
-  var setSearch = useState('')[1];
-  var saveMsg = useState('')[0];
-  var setSaveMsg = useState('')[1];
+  var view = React.useState('add');
+  var inputType = React.useState('text');
+  var rawText = React.useState('');
+  var loading = React.useState(false);
+  var error = React.useState('');
+  var parsed = React.useState(null);
+  var recipes = React.useState([]);
+  var search = React.useState('');
+  var saveMsg = React.useState('');
 
-  useEffect(function() {
+  // load from localStorage on mount
+  React.useEffect(function() {
     var s = localStorage.getItem('recipemee_recipes');
-    if (s) setRecipes(JSON.parse(s));
+    if (s) recipes[1](JSON.parse(s));
   }, []);
 
-  var handleParse = useCallback(function() {
-    if (!rawText.trim()) return;
-    setLoading(true);
-    setError('');
-    setParsed(null);
-    var text = rawText.trim();
+  function handleParse() {
+    if (!rawText[0].trim()) return;
+    loading[1](true);
+    error[1]('');
+    parsed[1](null);
+    var text = rawText[0].trim();
 
     fetch(WORKER_URL, {
       method: 'POST',
@@ -76,127 +94,99 @@ function App() {
     .then(function(data) {
       if (data.error) throw new Error(data.error.message || 'API error');
       var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-      // Handle markdown-wrapped JSON or raw JSON
       var m = content.match(/```json\n?([\s\S]*?)\n?```|(\{[\s\S]*\})/);
       if (m) {
-        setParsed(JSON.parse(m[1] || m[2]));
+        parsed[1](JSON.parse(m[1] || m[2]));
       } else {
         throw new Error('Could not parse recipe');
       }
     })
-    .catch(function(e) { setError('Parse failed: ' + e.message); })
-    .finally(function() { setLoading(false); });
-  }, [rawText]);
+    .catch(function(e) { error[1]('Parse failed: ' + e.message); })
+    .finally(function() { loading[1](false); });
+  }
 
-  var handleSave = useCallback(function() {
-    if (!parsed) return;
-    var recipe = Object.assign({}, parsed, { id: Date.now(), savedAt: new Date().toISOString() });
-    var updated = [recipe].concat(recipes);
-    setRecipes(updated);
+  function handleSave() {
+    if (!parsed[0]) return;
+    var recipe = Object.assign({}, parsed[0], { id: Date.now(), savedAt: new Date().toISOString() });
+    var updated = [recipe].concat(recipes[0]);
+    recipes[1](updated);
     localStorage.setItem('recipemee_recipes', JSON.stringify(updated));
-    setSaveMsg('Saved!');
-    setTimeout(function() { setSaveMsg(''); }, 2000);
-    setRawText('');
-    setParsed(null);
-    setView('library');
-  }, [parsed, recipes]);
+    saveMsg[1]('Saved!');
+    setTimeout(function() { saveMsg[1](''); }, 2000);
+    rawText[1]('');
+    parsed[1](null);
+    view[1]('library');
+  }
 
-  var handleDelete = useCallback(function(id) {
-    var updated = recipes.filter(function(r) { return r.id !== id; });
-    setRecipes(updated);
+  function handleDelete(id) {
+    var updated = recipes[0].filter(function(r) { return r.id !== id; });
+    recipes[1](updated);
     localStorage.setItem('recipemee_recipes', JSON.stringify(updated));
-  }, [recipes]);
+  }
 
-  var filtered = recipes.filter(function(r) {
-    var q = search.toLowerCase();
+  var filtered = recipes[0].filter(function(r) {
+    var q = search[0].toLowerCase();
     return (r.title && r.title.toLowerCase().includes(q)) ||
       (r.ingredients && r.ingredients.some(function(i) { return i.toLowerCase().includes(q); })) ||
       (r.tags && r.tags.some(function(t) { return t.toLowerCase().includes(q); }));
   });
 
-  return (
-    React.createElement('div', { className: 'container' },
-      React.createElement('header', { className: 'header' },
-        React.createElement('h1', { className: 'title' }, '📋 RecipeMee'),
-        React.createElement('div', { className: 'tabs' },
-          React.createElement('button', { className: 'tab' + (view === 'add' ? ' tabActive' : ''), onClick: function() { setView('add'); } }, '+ Add'),
-          React.createElement('button', { className: 'tab' + (view === 'library' ? ' tabActive' : ''), onClick: function() { setView('library'); } }, 'Library (' + recipes.length + ')')
-        )
-      ),
-      view === 'add' ?
-        React.createElement('div', { className: 'card' },
-          React.createElement('div', { className: 'toggle-group' },
-            React.createElement('button', { className: 'toggle-btn' + (inputType === 'text' ? ' toggle-active' : ''), onClick: function() { setInputType('text'); } }, 'Paste Text'),
-            React.createElement('button', { className: 'toggle-btn' + (inputType === 'url' ? ' toggle-active' : ''), onClick: function() { setInputType('url'); } }, 'Recipe URL')
+  return El('div', { className: 'container' },
+    El('header', { className: 'header' },
+      El('h1', { className: 'title' }, '📋 RecipeMee'),
+      El('div', { className: 'tabs' },
+        El('button', { className: 'tab' + (view[0] === 'add' ? ' tabActive' : ''), onClick: function() { view[1]('add'); } }, '+ Add'),
+        El('button', { className: 'tab' + (view[0] === 'library' ? ' tabActive' : ''), onClick: function() { view[1]('library'); } }, 'Library (' + recipes[0].length + ')')
+      )
+    ),
+    view[0] === 'add' ?
+      El('div', { className: 'card' },
+        El('div', { className: 'toggle-group' },
+          El('button', { className: 'toggle-btn' + (inputType[0] === 'text' ? ' toggle-active' : ''), onClick: function() { inputType[1]('text'); } }, 'Paste Text'),
+          El('button', { className: 'toggle-btn' + (inputType[0] === 'url' ? ' toggle-active' : ''), onClick: function() { inputType[1]('url'); } }, 'Recipe URL')
+        ),
+        El('textarea', {
+          className: 'textarea',
+          placeholder: inputType[0] === 'url' ? 'Paste recipe URL...\nhttps://example.com/...' : 'Paste recipe text here...',
+          value: rawText[0],
+          onChange: function(e) { rawText[1](e.target.value); },
+          rows: 10
+        }),
+        error[0] && El('div', { className: 'error' }, error[0]),
+        El('button', {
+          className: 'parse-btn',
+          onClick: handleParse,
+          disabled: loading[0] || !rawText[0].trim()
+        }, loading[0] ? 'Parsing...' : 'Parse Recipe'),
+        parsed[0] && El('div', { className: 'preview' },
+          El('h2', null, parsed[0].title || 'Untitled'),
+          parsed[0].description && El('p', null, parsed[0].description),
+          El('div', { className: 'meta' },
+            parsed[0].servings && El('span', null, '🍽 ' + parsed[0].servings),
+            parsed[0].totalTime && El('span', null, '⏱ ' + parsed[0].totalTime)
           ),
-          React.createElement('textarea', {
-            className: 'textarea',
-            placeholder: inputType === 'url' ? 'Paste recipe URL...\nhttps://example.com/...' : 'Paste recipe text here...',
-            value: rawText,
-            onChange: function(e) { setRawText(e.target.value); },
-            rows: 10
-          }),
-          error && React.createElement('div', { className: 'error' }, error),
-          React.createElement('button', {
-            className: 'parse-btn',
-            onClick: handleParse,
-            disabled: loading || !rawText.trim()
-          }, loading ? 'Parsing...' : 'Parse Recipe'),
-          parsed && React.createElement('div', { className: 'preview' },
-            React.createElement('h2', null, parsed.title || 'Untitled'),
-            parsed.description && React.createElement('p', null, parsed.description),
-            React.createElement('div', { className: 'meta' },
-              parsed.servings && React.createElement('span', null, '🍽 ' + parsed.servings),
-              parsed.totalTime && React.createElement('span', null, '⏱ ' + parsed.totalTime)
-            ),
-            React.createElement('h3', null, 'Ingredients (' + (parsed.ingredients ? parsed.ingredients.length : 0) + ')'),
-            React.createElement('ul', null, parsed.ingredients && parsed.ingredients.map(function(ing, i) { return React.createElement('li', {key: i}, ing); })),
-            React.createElement('h3', null, 'Instructions (' + (parsed.instructions ? parsed.instructions.length : 0) + ' steps)'),
-            React.createElement('ol', null, parsed.instructions && parsed.instructions.map(function(s, i) { return React.createElement('li', {key: i}, s); })),
-            React.createElement('button', { className: 'save-btn', onClick: handleSave }, saveMsg || '💾 Save to Library')
-          )
-        ) :
-        React.createElement('div', null,
-          React.createElement('input', {
-            className: 'search',
-            placeholder: 'Search recipes, ingredients, tags...',
-            value: search,
-            onChange: function(e) { setSearch(e.target.value); }
-          }),
-          filtered.length === 0 ?
-            React.createElement('div', { className: 'empty' }, recipes.length === 0 ? 'No recipes yet.' : 'No matches.') :
-            filtered.map(function(recipe) { return React.createElement(RecipeCard, { key: recipe.id, recipe: recipe, onDelete: handleDelete }); })
+          El('h3', null, 'Ingredients (' + (parsed[0].ingredients ? parsed[0].ingredients.length : 0) + ')'),
+          El('ul', null, parsed[0].ingredients && parsed[0].ingredients.map(function(ing, i) { return El('li', {key: i}, ing); })),
+          El('h3', null, 'Instructions (' + (parsed[0].instructions ? parsed[0].instructions.length : 0) + ' steps)'),
+          El('ol', null, parsed[0].instructions && parsed[0].instructions.map(function(s, i) { return El('li', {key: i}, s); })),
+          El('button', { className: 'save-btn', onClick: handleSave }, saveMsg[0] || '💾 Save to Library')
         )
-    )
+      ) :
+      El('div', null,
+        El('input', {
+          className: 'search',
+          placeholder: 'Search recipes, ingredients, tags...',
+          value: search[0],
+          onChange: function(e) { search[1](e.target.value); }
+        }),
+        filtered.length === 0 ?
+          El('div', { className: 'empty' }, recipes[0].length === 0 ? 'No recipes yet.' : 'No matches.') :
+          filtered.map(function(recipe) { return El(RecipeCard, { key: recipe.id, recipe: recipe, onDelete: handleDelete }); })
+      )
   );
 }
 
-function RecipeCard(props) {
-  var open = useState(false)[0];
-  var setOpen = useState(false)[1];
-  var recipe = props.recipe, onDelete = props.onDelete;
-  return React.createElement('div', { className: 'recipe-card' },
-    React.createElement('div', { className: 'card-header', onClick: function() { setOpen(!open); } },
-      React.createElement('h3', { className: 'card-title' }, recipe.title || 'Untitled'),
-      React.createElement('span', { className: 'expand-icon' }, open ? '▲' : '▼')
-    ),
-    recipe.description && React.createElement('p', { className: 'card-desc' }, recipe.description),
-    React.createElement('div', { className: 'card-meta' },
-      recipe.servings && React.createElement('span', null, '🍽 ' + recipe.servings),
-      recipe.totalTime && React.createElement('span', null, '⏱ ' + recipe.totalTime),
-      recipe.tags && recipe.tags.map(function(t) { return React.createElement('span', { key: t, className: 'tag' }, t); })
-    ),
-    open && React.createElement('div', { className: 'card-body' },
-      React.createElement('h4', null, 'Ingredients'),
-      React.createElement('ul', null, recipe.ingredients && recipe.ingredients.map(function(i, idx) { return React.createElement('li', {key: idx}, i); })),
-      React.createElement('h4', null, 'Instructions'),
-      React.createElement('ol', null, recipe.instructions && recipe.instructions.map(function(s, idx) { return React.createElement('li', {key: idx}, s); })),
-      React.createElement('button', { className: 'delete-btn', onClick: function() { onDelete(recipe.id); } }, '🗑 Delete')
-    )
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode, null, React.createElement(App)));
+ReactDOM.createRoot(document.getElementById('root')).render(El(React.StrictMode, null, El(App)));
 })();
 </script>
 </body>
