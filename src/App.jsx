@@ -58,6 +58,19 @@ async function fetchYouTubeTranscriptBrowser(videoId) {
   return description
 }
 
+async function fetchRecipeURL(pageUrl) {
+  // Use our Cloudflare Worker to fetch the URL content
+  const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/fetch-url?url=${encodeURIComponent(pageUrl)}`
+  const response = await fetch(proxyUrl)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(err.error || 'Failed to fetch URL')
+  }
+  const data = await response.json()
+  if (data.error) throw new Error(data.error)
+  return data.text || ''
+}
+
 function parseRecipeWithLLM(rawText) {
   return fetch(WORKER_URL, {
     method: 'POST',
@@ -271,6 +284,8 @@ export default function App() {
     setParsed(null)
     try {
       let textToParse = rawText.trim()
+
+      // YouTube URL — get description via API
       if (isYouTubeURL(textToParse)) {
         setFetchingTranscript(true)
         try {
@@ -280,7 +295,20 @@ export default function App() {
         } catch (e) {
           throw new Error('YouTube fetch failed: ' + e.message)
         } finally { setFetchingTranscript(false) }
+      } else if (textToParse.startsWith('http://') || textToParse.startsWith('https://')) {
+        // Generic URL — fetch page content
+        setFetchingTranscript(true)
+        try {
+          const pageText = await fetchRecipeURL(textToParse)
+          if (!pageText || pageText.length < 100) {
+            throw new Error('Could not extract text from this URL. Try copying the recipe text instead.')
+          }
+          textToParse = pageText
+        } catch (e) {
+          throw new Error('URL fetch failed: ' + e.message)
+        } finally { setFetchingTranscript(false) }
       }
+
       const result = await parseRecipeWithLLM(textToParse)
       setParsed(result)
     } catch (e) {
