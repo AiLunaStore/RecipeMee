@@ -1,7 +1,9 @@
-const CACHE_NAME = 'recipemee-v1';
+const CACHE_NAME = 'recipemee-v2';
 const urlsToCache = [
   '/RecipeMee/',
-  '/RecipeMee/index.html'
+  '/RecipeMee/index.html',
+  '/RecipeMee/assets/index-B6oCGqH2.js',
+  '/RecipeMee/assets/index-Citnd3k4.css'
 ];
 
 self.addEventListener('install', (event) => {
@@ -43,4 +45,5 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
+  self.clients.claim();
 });
