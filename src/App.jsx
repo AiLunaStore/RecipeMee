@@ -259,7 +259,6 @@ function scaleIngredientQty(ing, scale) {
 
 export default function App() {
   const [view, setView] = useState('library')
-  const [inputType, setInputType] = useState('text')
   const [rawText, setRawText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -634,14 +633,9 @@ export default function App() {
         {/* ===== ADD VIEW ===== */}
         {view === 'add' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={styles.tabToggle}>
-              <button style={{ ...styles.tab, ...(inputType === 'text' ? styles.tabActive : {}) }} onClick={() => setInputType('text')}>Text</button>
-              <button style={{ ...styles.tab, ...(inputType === 'url' ? styles.tabActive : {}) }} onClick={() => setInputType('url')}>URL / YouTube</button>
-            </div>
-
             <textarea
               style={styles.textarea}
-              placeholder={inputType === 'url' ? 'Paste recipe URL or YouTube link...\n\nSupports:\n• Any website URL\n• youtube.com/watch?v=...\n• youtu.be/...' : 'Paste recipe text here...\n\nCopy from any website, blog, cookbook, or type it out.'}
+              placeholder={'Paste a recipe URL, YouTube link, or recipe text...\n\nWorks with:\n• Any recipe website URL\n• YouTube video URLs\n• Copied recipe text from any source'}
               value={rawText}
               onChange={e => setRawText(e.target.value)}
               rows={12}
@@ -650,7 +644,7 @@ export default function App() {
             {error && <div style={styles.errorBox}>{error}</div>}
 
             <button style={styles.primaryBtn} onClick={handleParse} disabled={loading || !rawText.trim() || fetchingTranscript}>
-              {fetchingTranscript ? '📺 Fetching...' : loading ? '⏳ Parsing...' : isYouTubeURL(rawText) ? '🎬 Get YouTube Recipe' : '✨ Parse Recipe'}
+              {fetchingTranscript ? '📺 Getting recipe...' : loading ? '⏳ Parsing...' : '✨ Get Recipe'}
             </button>
 
             {parsed && <RecipePreview recipe={parsed} scaledIngredients={scaledIngredients} servingScale={servingScale} setServingScale={setServingScale} onSave={handleSave} saveMsg={saveMsg} />}
