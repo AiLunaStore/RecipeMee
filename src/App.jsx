@@ -593,8 +593,8 @@ export default function App() {
               <input style={styles.searchInput} placeholder="Search recipes, ingredients..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
-            {/* Filter Row */}
-            <div style={styles.filterRowWrap}>
+            {/* Filter Row — horizontally scrollable */}
+            <div style={styles.filterRow}>
               <button
                 style={{ ...styles.filterChip, ...(showFavoritesOnly ? styles.filterChipActive : {}) }}
                 onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -612,7 +612,7 @@ export default function App() {
               ))}
               {(showFavoritesOnly || selectedTags.length > 0) && (
                 <button style={styles.clearFilterBtn} onClick={() => { setShowFavoritesOnly(false); setSelectedTags([]) }}>
-                  ✕ Clear
+                  ✕
                 </button>
               )}
             </div>
@@ -1018,10 +1018,19 @@ const styles = {
   searchWrapper: { position: 'relative', marginBottom: '12px' },
   searchIcon: { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' },
   searchInput: { width: '100%', padding: '14px 14px 14px 42px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '14px', color: COLORS.text, fontSize: '15px', outline: 'none' },
-  filterRowWrap: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' },
+  filterRow: {
+    display: 'flex',
+    flexWrap: 'nowrap',
+    overflowX: 'auto',
+    gap: '8px',
+    marginBottom: '12px',
+    paddingBottom: '8px',
+    WebkitOverflowScrolling: 'touch',
+    scrollbarWidth: 'none',
+  },
   filterChip: { padding: '6px 14px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '20px', color: COLORS.textSecondary, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' },
   filterChipActive: { background: COLORS.primary, borderColor: COLORS.primary, color: COLORS.text },
-  clearFilterBtn: { padding: '6px 14px', background: 'transparent', border: 'none', color: COLORS.error, fontSize: '13px', cursor: 'pointer' },
+  clearFilterBtn: { padding: '6px 10px', background: 'transparent', border: 'none', color: COLORS.error, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 },
   nasBar: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', padding: '10px 14px', background: COLORS.surface, borderRadius: '10px', fontSize: '13px', color: COLORS.textSecondary, flexWrap: 'wrap' },
   restoreBtnSmall: { background: 'transparent', border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' },
   grid: { display: 'flex', flexDirection: 'column', gap: '12px' },
