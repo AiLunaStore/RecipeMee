@@ -21,25 +21,17 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscriptBrowser(videoId) {
-  // Fetch transcript using YouTube's internal transcript API from the browser
-  // This avoids CORS issues since the request comes from the user's browser
-  const transcriptUrl = `https://youtubetranscript.com/?v=${videoId}`
-  const response = await fetch(transcriptUrl)
-  if (!response.ok) throw new Error('No transcript available for this video')
-
-  const html = await response.text()
-  // Extract text content from the HTML response
-  const textMatch = html.match(/<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/)
-  if (!textMatch) {
-    // Try alternate extraction
-    const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)
-    if (preMatch) return preMatch[1].replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim()
-    throw new Error('Could not parse transcript HTML')
+  // Use the dedicated Cloudflare Worker to fetch YouTube transcripts
+  // Worker runs at Cloudflare edge (not NAS IP), so YouTube doesn't block it
+  const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/youtube-transcript?videoId=${videoId}`
+  const response = await fetch(proxyUrl)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(err.error || 'Transcript fetch failed')
   }
-  return textMatch[1]
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .trim()
+  const data = await response.json()
+  if (data.error) throw new Error(data.error)
+  return data.transcript
 }
 
 function parseRecipeWithLLM(rawText) {
