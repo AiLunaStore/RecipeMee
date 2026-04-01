@@ -1,37 +1,36 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 
-// Key note: the worker URL is used instead of MiniMax directly to HIDE the API key from the browser.
-// The key lives in the Cloudflare Worker secret, not in client-side code.
 const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
 const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
 const MODEL = 'minimax-m2'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 
-// Dark Mode Color Palette
 const COLORS = {
   bg: '#0D0D0D',
   surface: '#1A1A1A',
   surfaceHover: '#242424',
-  border: '#2A2A2A',
-  primary: '#8B5CF6',      // Violet
+  border: '#2A2D2D',
+  primary: '#8B5CF6',
   primaryHover: '#7C3AED',
-  secondary: '#06B6D4',    // Cyan
-  accent: '#F59E0B',       // Amber
-  success: '#10B981',      // Emerald
-  error: '#EF4444',        // Red
+  secondary: '#06B6D4',
+  accent: '#F59E0B',
+  success: '#10B981',
+  error: '#EF4444',
   text: '#FAFAFA',
   textSecondary: '#A1A1AA',
   textMuted: '#71717A',
+  danger: '#EF4444',
+  star: '#FBBF24',
 }
+
+const ALL_TAGS = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Drinks', 'Vegan', 'Vegetarian', 'Gluten-Free', 'Quick (<30min)', 'Keto', 'Low-Carb', 'Comfort Food', 'Healthy', 'Spicy', 'Asian', 'Mexican', 'Italian', 'American']
 
 function isYouTubeURL(text) {
   return /youtube\.com|youtu\.be/.test(text)
 }
 
 function extractVideoId(url) {
-  const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
-  ]
+  const patterns = [/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/]
   for (const pattern of patterns) {
     const match = url.match(pattern)
     if (match) return match[1]
@@ -40,60 +39,42 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscriptBrowser(videoId) {
-  try {
-    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
-    const detailsRes = await fetch(detailsUrl)
-    if (!detailsRes.ok) throw new Error('YouTube API unavailable')
-    const details = await detailsRes.json()
-
-    if (!details.items?.length) {
-      throw new Error('Video not found or not accessible')
-    }
-
-    const video = details.items[0]
-    const description = video.snippet?.description || ''
-
-    if (description.length > 50) {
-      return description
-    }
-    throw new Error('No description found for this video.')
-  } catch (e) {
-    throw new Error(e.message || 'YouTube transcript fetch failed')
-  }
+  const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
+  const detailsRes = await fetch(detailsUrl)
+  if (!detailsRes.ok) throw new Error('YouTube API unavailable')
+  const details = await detailsRes.json()
+  if (!details.items?.length) throw new Error('Video not found')
+  const description = details.items[0].snippet?.description || ''
+  if (description.length < 50) throw new Error('No description found')
+  return description
 }
 
 function parseRecipeWithLLM(rawText) {
   return fetch(WORKER_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2000,
       temperature: 0.3,
-      messages: [
-        {
-          role: 'system',
-          content: `You are a recipe parser. Parse the recipe text below into a clean JSON object with exactly this structure:
+      messages: [{
+        role: 'system',
+        content: `Parse this recipe into clean JSON. For each ingredient, try to identify and extract the quantity as a separate "qty" field.
+Return ONLY the JSON object with this exact structure:
 {
   "title": "Recipe name",
   "description": "1-2 sentence description",
-  "servings": "number or string like '4 servings'",
-  "prepTime": "e.g. '15 mins'",
-  "cookTime": "e.g. '30 mins'",
-  "totalTime": "e.g. '45 mins'",
-  "ingredients": ["list of all ingredients"],
-  "instructions": ["step 1", "step 2", ...],
-  "tags": ["relevant tags"]
+  "servings": "4 servings",
+  "prepTime": "15 mins",
+  "cookTime": "30 mins",
+  "totalTime": "45 mins",
+  "ingredients": [{"text": "full ingredient text", "qty": "quantity if detectable", "unit": "unit if detectable", "item": "ingredient name"}],
+  "instructions": [{"text": "step text", "timer": "optional timer like '5 mins'"}],
+  "tags": ["relevant tags"],
+  "photoUrl": ""
 }
-Return ONLY the JSON object, nothing else. If a field is unknown, omit it or use null.`
-        },
-        {
-          role: 'user',
-          content: rawText
-        }
-      ]
+Return ONLY the JSON, nothing else.`
+      }, { role: 'user', content: rawText }]
     })
   })
   .then(r => r.json())
@@ -101,46 +82,84 @@ Return ONLY the JSON object, nothing else. If a field is unknown, omit it or use
     const content = data.choices?.[0]?.message?.content || ''
     let jsonMatch = content.match(/\{[\s\S]*?\}/s)
     if (!jsonMatch) jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) throw new Error('No JSON found in response: ' + content.substring(0, 100))
-    try {
-      return JSON.parse(jsonMatch[0])
-    } catch (e) {
+    if (!jsonMatch) throw new Error('Parse failed: ' + content.substring(0, 80))
+    try { return JSON.parse(jsonMatch[0]) }
+    catch (e) {
       const fixed = jsonMatch[0].replace(/,(\s*[}\]])/g, '$1')
-      return JSON.parse(fixed)
+      try { return JSON.parse(fixed) }
+      catch (e2) { return JSON.parse(jsonMatch[0]) }
     }
   })
 }
 
 async function backupToNAS(recipes) {
-  try {
-    const response = await fetch(NAS_BACKUP_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipes,
-        lastUpdated: new Date().toISOString(),
-        deviceId: 'iphone-' + navigator.userAgent.substring(0, 20)
-      })
-    })
-    if (!response.ok) throw new Error('Backup failed')
-    return await response.json()
-  } catch (e) {
-    throw e
-  }
+  const response = await fetch(NAS_BACKUP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipes, lastUpdated: new Date().toISOString() })
+  })
+  if (!response.ok) throw new Error('Backup failed')
+  return response.json()
 }
 
 async function restoreFromNAS() {
-  try {
-    const response = await fetch(NAS_BACKUP_URL)
-    if (!response.ok) throw new Error('Restore failed')
-    const data = await response.json()
-    return data
-  } catch (e) {
-    throw e
-  }
+  const response = await fetch(NAS_BACKUP_URL)
+  if (!response.ok) throw new Error('Restore failed')
+  return response.json()
 }
 
-function App() {
+// Parse a quantity string like "1 1/2" or "0.5" into a float
+function parseQty(qtyStr) {
+  if (!qtyStr) return null
+  const str = qtyStr.trim()
+  // Handle fractions like "1/2", "3/4"
+  if (/^\d+\/\d+$/.test(str)) {
+    const [n, d] = str.split('/').map(Number)
+    return n / d
+  }
+  // Handle mixed numbers like "1 1/2"
+  const parts = str.split(' ')
+  let total = 0
+  for (const p of parts) {
+    if (p.includes('/')) {
+      const [n, d] = p.split('/').map(Number)
+      total += n / d
+    } else {
+      total += parseFloat(p) || 0
+    }
+  }
+  return total || null
+}
+
+// Scale an ingredient quantity by a factor
+function scaleIngredientQty(ing, scale) {
+  if (!ing.qty) return ing
+  const qty = parseQty(ing.qty)
+  if (qty === null) return ing
+  const scaled = qty * scale
+  // Format nicely
+  let formatted
+  if (Number.isInteger(scaled)) {
+    formatted = String(scaled)
+  } else if (Math.abs(scaled - 0.25) < 0.01) {
+    formatted = '¼'
+  } else if (Math.abs(scaled - 0.33) < 0.02) {
+    formatted = '⅓'
+  } else if (Math.abs(scaled - 0.5) < 0.01) {
+    formatted = '½'
+  } else if (Math.abs(scaled - 0.67) < 0.02) {
+    formatted = '⅔'
+  } else if (Math.abs(scaled - 0.75) < 0.01) {
+    formatted = '¾'
+  } else if (Math.abs(scaled - 0.125) < 0.01) {
+    formatted = '⅛'
+  } else {
+    formatted = scaled % 1 === 0 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, '')
+  }
+  return { ...ing, qty: formatted }
+}
+
+export default function App() {
   const [view, setView] = useState('library')
   const [inputType, setInputType] = useState('text')
   const [rawText, setRawText] = useState('')
@@ -154,20 +173,27 @@ function App() {
   const [syncStatus, setSyncStatus] = useState('')
   const [lastSync, setLastSync] = useState(localStorage.getItem('recipemee_last_sync') || '')
   const [nasCount, setNasCount] = useState(null)
+  const [selectedTags, setSelectedTags] = useState([])
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [selectedRecipe, setSelectedRecipe] = useState(null)
+  const [currentStep, setCurrentStep] = useState(0)
+  const [servingScale, setServingScale] = useState(1)
+  const [groceryList, setGroceryList] = useState([])
+  const [groceryChecked, setGroceryChecked] = useState({})
   const syncTimerRef = useRef(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('recipemee_recipes')
     if (saved) setRecipes(JSON.parse(saved))
+    const savedGrocery = localStorage.getItem('recipemee_grocery')
+    if (savedGrocery) setGroceryList(JSON.parse(savedGrocery))
     checkNASCount()
   }, [])
 
   useEffect(() => {
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     syncTimerRef.current = setTimeout(() => {
-      if (recipes.length > 0) {
-        autoBackup()
-      }
+      if (recipes.length > 0) autoBackup()
     }, 5000)
     return () => clearTimeout(syncTimerRef.current)
   }, [recipes])
@@ -176,9 +202,7 @@ function App() {
     try {
       const data = await restoreFromNAS()
       setNasCount(data.count || 0)
-    } catch (e) {
-      setNasCount(null)
-    }
+    } catch { setNasCount(null) }
   }
 
   async function autoBackup() {
@@ -191,18 +215,18 @@ function App() {
       localStorage.setItem('recipemee_last_sync', now)
       checkNASCount()
       setTimeout(() => setSyncStatus(''), 2000)
-    } catch (e) {
+    } catch {
       setSyncStatus('error')
       setTimeout(() => setSyncStatus(''), 3000)
     }
   }
 
   async function handleRestore() {
-    if (!window.confirm('This will replace your current recipes with the backup. Continue?')) return
+    if (!window.confirm('Replace current recipes with backup?')) return
     try {
       setSyncStatus('syncing')
       const data = await restoreFromNAS()
-      if (data.recipes && data.recipes.length > 0) {
+      if (data.recipes?.length) {
         setRecipes(data.recipes)
         localStorage.setItem('recipemee_recipes', JSON.stringify(data.recipes))
         setSyncStatus('restored')
@@ -225,83 +249,122 @@ function App() {
     setLoading(true)
     setError('')
     setParsed(null)
-
     try {
       let textToParse = rawText.trim()
-
       if (isYouTubeURL(textToParse)) {
         setFetchingTranscript(true)
         try {
           const videoId = extractVideoId(textToParse)
-          if (!videoId) throw new Error('Could not extract video ID from URL')
-          const transcript = await fetchYouTubeTranscriptBrowser(videoId)
-          if (!transcript || transcript.length < 50) {
-            throw new Error('No description available for this video.')
-          }
-          textToParse = transcript
+          if (!videoId) throw new Error('Could not extract video ID')
+          textToParse = await fetchYouTubeTranscriptBrowser(videoId)
         } catch (e) {
           throw new Error('YouTube fetch failed: ' + e.message)
-        } finally {
-          setFetchingTranscript(false)
-        }
+        } finally { setFetchingTranscript(false) }
       }
-
       const result = await parseRecipeWithLLM(textToParse)
       setParsed(result)
     } catch (e) {
-      setError('Parse failed: ' + e.message)
+      setError(e.message)
     } finally {
       setLoading(false)
       setFetchingTranscript(false)
     }
   }
 
-  const handleSave = () => {
+  function handleSave() {
     if (!parsed) return
+    // Ensure servings info
+    let servings = parsed.servings || '4'
+    if (typeof servings === 'number') servings = String(servings)
+    // Normalize ingredients
+    let ingredients = parsed.ingredients || []
+    if (typeof ingredients[0] === 'string') {
+      ingredients = ingredients.map(text => ({ text, qty: null, unit: null, item: text }))
+    }
     const recipe = {
       ...parsed,
+      servings,
+      ingredients,
+      tags: parsed.tags || [],
+      photoUrl: parsed.photoUrl || '',
       id: Date.now(),
-      savedAt: new Date().toISOString()
+      savedAt: new Date().toISOString(),
+      favorite: false,
     }
     const updated = [recipe, ...recipes]
     setRecipes(updated)
     localStorage.setItem('recipemee_recipes', JSON.stringify(updated))
     setSaveMsg('Saved!')
-    setTimeout(() => setSaveMsg(''), 2000)
-    setRawText('')
-    setParsed(null)
-    setView('library')
+    setTimeout(() => { setSaveMsg(''); setRawText(''); setParsed(null); setView('library') }, 1500)
     autoBackup()
   }
 
-  const handleDelete = (id) => {
+  function toggleFavorite(id) {
+    const updated = recipes.map(r => r.id === id ? { ...r, favorite: !r.favorite } : r)
+    setRecipes(updated)
+    localStorage.setItem('recipemee_recipes', JSON.stringify(updated))
+  }
+
+  function handleDelete(id) {
     const updated = recipes.filter(r => r.id !== id)
     setRecipes(updated)
     localStorage.setItem('recipemee_recipes', JSON.stringify(updated))
   }
 
-  const filtered = recipes.filter(r => {
+  function enterCookMode(recipe) {
+    setSelectedRecipe(recipe)
+    setCurrentStep(0)
+    setServingScale(1)
+    setView('cook')
+  }
+
+  function addToGroceryList(recipe) {
+    const items = recipe.ingredients.map(ing => {
+      const text = typeof ing === 'string' ? ing : ing.text || ''
+      return text
+    }).filter(Boolean)
+    const updated = [...new Set([...groceryList, ...items])]
+    setGroceryList(updated)
+    localStorage.setItem('recipemee_grocery', JSON.stringify(updated))
+  }
+
+  function toggleGroceryItem(item) {
+    setGroceryChecked(prev => ({ ...prev, [item]: !prev[item] }))
+  }
+
+  function clearGrocery() {
+    setGroceryList([])
+    setGroceryChecked({})
+    localStorage.removeItem('recipemee_grocery')
+  }
+
+  // Filter recipes
+  let filtered = recipes
+  if (search.trim()) {
     const q = search.toLowerCase()
-    return (
+    filtered = filtered.filter(r =>
       r.title?.toLowerCase().includes(q) ||
-      r.ingredients?.some(i => i.toLowerCase().includes(q)) ||
+      r.ingredients?.some(i => (typeof i === 'string' ? i : i.text || '').toLowerCase().includes(q)) ||
       r.tags?.some(t => t.toLowerCase().includes(q))
     )
-  })
+  }
+  if (showFavoritesOnly) filtered = filtered.filter(r => r.favorite)
+  if (selectedTags.length > 0) {
+    filtered = filtered.filter(r => selectedTags.some(t => r.tags?.includes(t)))
+  }
 
-  const syncStatusConfig = {
-    '': null,
-    'syncing': { text: 'Syncing...', color: COLORS.textSecondary },
-    'saved': { text: '✓ Backed up', color: COLORS.success },
-    'restored': { text: '✓ Restored', color: COLORS.success },
-    'error': { text: 'Sync failed', color: COLORS.error }
-  }[syncStatus]
+  // Serving scale
+  let scaledIngredients = parsed?.ingredients || []
+  if (servingScale !== 1 && scaledIngredients.length > 0) {
+    scaledIngredients = scaledIngredients.map(ing => scaleIngredientQty(ing, servingScale))
+  }
+
+  const syncStatusConfig = { '': null, syncing: { text: 'Syncing...', color: COLORS.textSecondary }, saved: { text: '✓ Backed up', color: COLORS.success }, restored: { text: '✓ Restored', color: COLORS.success }, error: { text: 'Sync failed', color: COLORS.error } }[syncStatus]
 
   return (
     <div style={styles.root}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap');
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: ${COLORS.bg}; color: ${COLORS.text}; font-family: 'Inter', sans-serif; }
         ::-webkit-scrollbar { width: 6px; }
@@ -309,169 +372,169 @@ function App() {
         ::-webkit-scrollbar-thumb { background: ${COLORS.border}; border-radius: 3px; }
         ::selection { background: ${COLORS.primary}; color: white; }
         input, textarea, button { font-family: inherit; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
 
-      {/* Header */}
       <header style={styles.header}>
-        <div style={styles.headerLeft}>
+        <div>
           <h1 style={styles.logo}>RecipeMee</h1>
           <span style={styles.tagline}>your recipe library</span>
         </div>
-        <div style={styles.headerRight}>
-          {syncStatusConfig && (
-            <span style={{...styles.syncBadge, color: syncStatusConfig.color}}>
-              {syncStatusConfig.text}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {syncStatusConfig && <span style={{ fontSize: '13px', color: syncStatusConfig.color }}>{syncStatusConfig.text}</span>}
+          <button style={styles.iconBtn} onClick={() => setView('grocery')} title="Grocery List">
+            🛒 {groceryList.length > 0 && <span style={styles.badge}>{groceryList.length}</span>}
+          </button>
         </div>
       </header>
 
-      {/* Bottom Nav */}
       <nav style={styles.bottomNav}>
-        <button
-          style={{...styles.navBtn, ...(view === 'library' ? styles.navBtnActive : {})}}
-          onClick={() => setView('library')}
-        >
-          <span style={styles.navIcon}>📚</span>
-          <span style={styles.navLabel}>Library</span>
+        <button style={{ ...styles.navBtn, ...(view === 'library' ? styles.navBtnActive : {}) }} onClick={() => setView('library')}>
+          <span style={styles.navIcon}>📚</span><span style={styles.navLabel}>Library</span>
         </button>
-        <button
-          style={{...styles.navBtn, ...(view === 'add' ? styles.navBtnActive : {})}}
-          onClick={() => setView('add')}
-        >
-          <span style={styles.navIcon}>➕</span>
-          <span style={styles.navLabel}>Add</span>
+        <button style={{ ...styles.navBtn, ...(view === 'add' ? styles.navBtnActive : {}) }} onClick={() => setView('add')}>
+          <span style={styles.navIcon}>➕</span><span style={styles.navLabel}>Add</span>
+        </button>
+        <button style={{ ...styles.navBtn, ...(view === 'grocery' ? styles.navBtnActive : {}) }} onClick={() => setView('grocery')}>
+          <span style={styles.navIcon}>🛒</span><span style={styles.navLabel}>Grocery</span>
+          {groceryList.length > 0 && <span style={styles.badge}>{groceryList.length}</span>}
         </button>
       </nav>
 
-      {/* Main Content */}
       <main style={styles.main}>
-
+        {/* ===== LIBRARY VIEW ===== */}
         {view === 'library' && (
           <div>
-            {/* Search */}
             <div style={styles.searchWrapper}>
               <span style={styles.searchIcon}>🔍</span>
-              <input
-                style={styles.searchInput}
-                placeholder="Search recipes, ingredients..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+              <input style={styles.searchInput} placeholder="Search recipes, ingredients..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
-            {/* NAS Info Bar */}
-            <div style={styles.nasBar}>
-              <span style={styles.nasCount}>
-                {nasCount !== null ? (
-                  nasCount > 0 ? `${nasCount} recipes backed up` : 'No backup yet'
-                ) : '...'}
-              </span>
-              {lastSync && <span style={styles.lastSync}>Last sync {lastSync}</span>}
-              <button style={styles.restoreBtnSmall} onClick={handleRestore}>
-                ↩ Restore
+            {/* Filter Row */}
+            <div style={styles.filterRow}>
+              <button
+                style={{ ...styles.filterChip, ...(showFavoritesOnly ? styles.filterChipActive : {}) }}
+                onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+              >
+                ♥ Favorites
               </button>
+              {ALL_TAGS.slice(0,6).map(tag => (
+                <button
+                  key={tag}
+                  style={{ ...styles.filterChip, ...(selectedTags.includes(tag) ? styles.filterChipActive : {}) }}
+                  onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                >
+                  {tag}
+                </button>
+              ))}
+              {(showFavoritesOnly || selectedTags.length > 0) && (
+                <button style={styles.clearFilterBtn} onClick={() => { setShowFavoritesOnly(false); setSelectedTags([]) }}>
+                  ✕ Clear
+                </button>
+              )}
             </div>
 
-            {/* Recipe Grid */}
+            {/* NAS Bar */}
+            <div style={styles.nasBar}>
+              <span style={{ flex: 1, fontSize: '13px', color: COLORS.textSecondary }}>
+                {nasCount !== null ? (nasCount > 0 ? `${nasCount} backed up` : 'No backup yet') : '...'}
+              </span>
+              {lastSync && <span style={{ fontSize: '12px', color: COLORS.textMuted }}>Synced {lastSync}</span>}
+              <button style={styles.restoreBtnSmall} onClick={handleRestore}>↩ Restore</button>
+            </div>
+
             {filtered.length === 0 ? (
               <div style={styles.emptyState}>
-                <span style={styles.emptyIcon}>📝</span>
-                <h3 style={styles.emptyTitle}>No recipes yet</h3>
-                <p style={styles.emptyText}>Add your first recipe to get started</p>
-                <button style={styles.emptyBtn} onClick={() => setView('add')}>
-                  + Add Recipe
-                </button>
+                <span style={{ fontSize: '48px', marginBottom: '16px' }}>📝</span>
+                <h3 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '8px' }}>No recipes yet</h3>
+                <p style={{ fontSize: '14px', color: COLORS.textSecondary, marginBottom: '24px' }}>
+                  {recipes.length === 0 ? 'Add your first recipe to get started' : 'No recipes match your filters'}
+                </p>
+                <button style={styles.primaryBtn} onClick={() => setView('add')}>+ Add Recipe</button>
               </div>
             ) : (
               <div style={styles.grid}>
                 {filtered.map(recipe => (
-                  <RecipeCard key={recipe.id} recipe={recipe} onDelete={handleDelete} />
+                  <RecipeCard
+                    key={recipe.id}
+                    recipe={recipe}
+                    onDelete={handleDelete}
+                    onToggleFavorite={toggleFavorite}
+                    onEnterCook={enterCookMode}
+                    onAddToGrocery={addToGroceryList}
+                  />
                 ))}
               </div>
             )}
           </div>
         )}
 
+        {/* ===== ADD VIEW ===== */}
         {view === 'add' && (
-          <div style={styles.addView}>
-            {/* Tab Toggle */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={styles.tabToggle}>
-              <button
-                style={{...styles.tab, ...(inputType === 'text' ? styles.tabActive : {})}}
-                onClick={() => setInputType('text')}
-              >
-                Text
-              </button>
-              <button
-                style={{...styles.tab, ...(inputType === 'url' ? styles.tabActive : {})}}
-                onClick={() => setInputType('url')}
-              >
-                URL / YouTube
-              </button>
+              <button style={{ ...styles.tab, ...(inputType === 'text' ? styles.tabActive : {}) }} onClick={() => setInputType('text')}>Text</button>
+              <button style={{ ...styles.tab, ...(inputType === 'url' ? styles.tabActive : {}) }} onClick={() => setInputType('url')}>URL / YouTube</button>
             </div>
 
-            {/* Textarea */}
             <textarea
               style={styles.textarea}
-              placeholder={
-                inputType === 'url'
-                  ? 'Paste recipe URL or YouTube link...\n\nSupports:\n• Any website URL\n• youtube.com/watch?v=...\n• youtu.be/...'
-                  : 'Paste recipe text here...\n\nCopy from any website, blog, cookbook, or type it out.'
-              }
+              placeholder={inputType === 'url' ? 'Paste recipe URL or YouTube link...\n\nSupports:\n• Any website URL\n• youtube.com/watch?v=...\n• youtu.be/...' : 'Paste recipe text here...\n\nCopy from any website, blog, cookbook, or type it out.'}
               value={rawText}
               onChange={e => setRawText(e.target.value)}
               rows={12}
             />
 
-            {/* Error */}
-            {error && (
-              <div style={styles.errorBox}>
-                {error}
-              </div>
-            )}
+            {error && <div style={styles.errorBox}>{error}</div>}
 
-            {/* Parse Button */}
-            <button
-              style={styles.parseBtn}
-              onClick={handleParse}
-              disabled={loading || !rawText.trim() || fetchingTranscript}
-            >
+            <button style={styles.primaryBtn} onClick={handleParse} disabled={loading || !rawText.trim() || fetchingTranscript}>
               {fetchingTranscript ? '📺 Fetching...' : loading ? '⏳ Parsing...' : isYouTubeURL(rawText) ? '🎬 Get YouTube Recipe' : '✨ Parse Recipe'}
             </button>
 
-            {/* Preview */}
-            {parsed && (
-              <div style={styles.preview}>
-                <h2 style={styles.previewTitle}>{parsed.title || 'Untitled'}</h2>
-                {parsed.description && (
-                  <p style={styles.previewDesc}>{parsed.description}</p>
-                )}
-                <div style={styles.metaRow}>
-                  {parsed.servings && <span style={styles.metaChip}>🍽 {parsed.servings}</span>}
-                  {parsed.totalTime && <span style={styles.metaChip}>⏱ {parsed.totalTime}</span>}
-                  {parsed.tags?.map(tag => (
-                    <span key={tag} style={styles.tagChip}>{tag}</span>
-                  ))}
-                </div>
+            {parsed && <RecipePreview recipe={parsed} scaledIngredients={scaledIngredients} servingScale={servingScale} setServingScale={setServingScale} onSave={handleSave} saveMsg={saveMsg} />}
+          </div>
+        )}
 
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>Ingredients ({parsed.ingredients?.length || 0})</h3>
-                  <ul style={styles.list}>
-                    {parsed.ingredients?.map((ing, i) => <li key={i}>{ing}</li>)}
-                  </ul>
-                </div>
+        {/* ===== COOK MODE VIEW ===== */}
+        {view === 'cook' && selectedRecipe && (
+          <CookMode
+            recipe={selectedRecipe}
+            currentStep={currentStep}
+            setCurrentStep={setCurrentStep}
+            servingScale={servingScale}
+            setServingScale={setServingScale}
+            onBack={() => setView('library')}
+          />
+        )}
 
-                <div style={styles.section}>
-                  <h3 style={styles.sectionTitle}>Instructions ({parsed.instructions?.length || 0})</h3>
-                  <ol style={styles.list}>
-                    {parsed.instructions?.map((step, i) => <li key={i}>{step}</li>)}
-                  </ol>
-                </div>
-
-                <button style={styles.saveBtn} onClick={handleSave}>
-                  {saveMsg || '💾 Save to Library'}
-                </button>
+        {/* ===== GROCERY VIEW ===== */}
+        {view === 'grocery' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '24px', fontFamily: "'Playfair Display', serif" }}>Grocery List</h2>
+              {groceryList.length > 0 && (
+                <button style={styles.clearBtn} onClick={clearGrocery}>Clear All</button>
+              )}
+            </div>
+            {groceryList.length === 0 ? (
+              <div style={styles.emptyState}>
+                <span style={{ fontSize: '48px', marginBottom: '16px' }}>🛒</span>
+                <p style={{ color: COLORS.textSecondary }}>Add ingredients from any recipe</p>
+              </div>
+            ) : (
+              <div style={styles.groceryList}>
+                {groceryList.map(item => (
+                  <div
+                    key={item}
+                    style={{ ...styles.groceryItem, ...(groceryChecked[item] ? styles.groceryItemChecked : {}) }}
+                    onClick={() => toggleGroceryItem(item)}
+                  >
+                    <span style={{ ...styles.groceryCheck, ...(groceryChecked[item] ? styles.groceryCheckChecked : {}) }}>
+                      {groceryChecked[item] ? '✓' : ''}
+                    </span>
+                    <span style={{ flex: 1 }}>{item}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -481,50 +544,275 @@ function App() {
   )
 }
 
-function RecipeCard({ recipe, onDelete }) {
+function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGrocery }) {
   const [expanded, setExpanded] = useState(false)
+  const hasIngredients = recipe.ingredients?.length > 0
+  const hasInstructions = recipe.instructions?.length > 0
+
   return (
     <div style={styles.card}>
       <div style={styles.cardHeader} onClick={() => setExpanded(!expanded)}>
-        <div style={styles.cardInfo}>
-          <h3 style={styles.cardTitle}>{recipe.title || 'Untitled'}</h3>
+        <div style={{ flex: 1 }}>
+          {recipe.photoUrl && (
+            <img src={recipe.photoUrl} alt="" style={styles.cardPhoto} onError={e => e.target.style.display = 'none'} />
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+            <h3 style={styles.cardTitle}>{recipe.title || 'Untitled'}</h3>
+            <button
+              style={{ ...styles.favoriteBtn, color: recipe.favorite ? COLORS.star : COLORS.textMuted }}
+              onClick={e => { e.stopPropagation(); onToggleFavorite(recipe.id) }}
+            >
+              {recipe.favorite ? '♥' : '♡'}
+            </button>
+          </div>
           <div style={styles.cardMeta}>
             {recipe.servings && <span>🍽 {recipe.servings}</span>}
             {recipe.totalTime && <span>⏱ {recipe.totalTime}</span>}
+            {recipe.tags?.slice(0, 2).map(tag => <span key={tag} style={styles.tag}>{tag}</span>)}
           </div>
         </div>
-        <span style={{...styles.expandIcon, transform: expanded ? 'rotate(180deg)' : 'none'}}>
-          ▼
-        </span>
+        <span style={{ ...styles.expandIcon, transform: expanded ? 'rotate(180deg)' : 'none' }}>▼</span>
       </div>
 
       {expanded && (
         <div style={styles.cardBody}>
-          {recipe.description && (
-            <p style={styles.cardDesc}>{recipe.description}</p>
-          )}
+          {recipe.description && <p style={styles.cardDesc}>{recipe.description}</p>}
           {recipe.tags?.length > 0 && (
-            <div style={styles.cardTags}>
-              {recipe.tags.map(tag => (
-                <span key={tag} style={styles.tagChip}>{tag}</span>
-              ))}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+              {recipe.tags.map(tag => <span key={tag} style={styles.tag}>{tag}</span>)}
             </div>
           )}
-          <div style={styles.section}>
-            <h4 style={styles.sectionTitle}>Ingredients</h4>
-            <ul style={styles.list}>
-              {recipe.ingredients?.map((ing, i) => <li key={i}>{ing}</li>)}
-            </ul>
+
+          {hasIngredients && (
+            <div style={styles.cardSection}>
+              <h4 style={styles.cardSectionTitle}>Ingredients</h4>
+              <ul style={styles.list}>
+                {recipe.ingredients.map((ing, i) => {
+                  const text = typeof ing === 'string' ? ing : ing.text || ''
+                  return <li key={i}>{text}</li>
+                })}
+              </ul>
+            </div>
+          )}
+
+          {hasInstructions && (
+            <div style={styles.cardSection}>
+              <h4 style={styles.cardSectionTitle}>Instructions</h4>
+              <ol style={styles.list}>
+                {recipe.instructions.map((step, i) => {
+                  const text = typeof step === 'string' ? step : step.text || ''
+                  return <li key={i}>{text}</li>
+                })}
+              </ol>
+            </div>
+          )}
+
+          <div style={styles.cardActions}>
+            {hasInstructions && (
+              <button style={styles.cookBtn} onClick={() => onEnterCook(recipe)}>👨‍🍳 Cook Mode</button>
+            )}
+            <button style={styles.groceryBtn} onClick={() => onAddToGrocery(recipe)}>🛒 Add to List</button>
+            <button style={styles.deleteBtn} onClick={() => onDelete(recipe.id)}>🗑</button>
           </div>
-          <div style={styles.section}>
-            <h4 style={styles.sectionTitle}>Instructions</h4>
-            <ol style={styles.list}>
-              {recipe.instructions?.map((step, i) => <li key={i}>{step}</li>)}
-            </ol>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RecipePreview({ recipe, scaledIngredients, servingScale, setServingScale, onSave, saveMsg }) {
+  const displayIngredients = scaledIngredients.length > 0 ? scaledIngredients : recipe.ingredients || []
+  const servingsNum = parseInt((recipe.servings || '4').replace(/\D/g, '') || '4')
+
+  return (
+    <div style={styles.preview}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: '24px', fontWeight: 700 }}>{recipe.title || 'Untitled'}</h2>
+        <button style={styles.favoriteBtn} onClick={e => e.stopPropagation()}>♡</button>
+      </div>
+
+      {recipe.description && <p style={{ fontSize: '14px', color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: '12px' }}>{recipe.description}</p>}
+
+      {/* Serving Scaler */}
+      <div style={styles.servingScaler}>
+        <span style={{ fontSize: '14px', color: COLORS.textSecondary }}>Servings:</span>
+        <div style={styles.servingControls}>
+          <button style={styles.servingBtn} onClick={() => setServingScale(s => Math.max(0.5, s - 0.5))}>−</button>
+          <span style={{ fontWeight: 600, minWidth: '60px', textAlign: 'center' }}>
+            {Math.round(servingsNum * servingScale)} servings
+          </span>
+          <button style={styles.servingBtn} onClick={() => setServingScale(s => s + 0.5)}>+</button>
+        </div>
+        <button style={{ fontSize: '12px', color: COLORS.primary, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setServingScale(1)}>Reset</button>
+      </div>
+
+      <div style={styles.metaRow}>
+        {recipe.servings && <span style={styles.metaChip}>🍽 {recipe.servings}</span>}
+        {recipe.totalTime && <span style={styles.metaChip}>⏱ {recipe.totalTime}</span>}
+        {recipe.tags?.map(tag => <span key={tag} style={styles.tagChip}>{tag}</span>)}
+      </div>
+
+      {displayIngredients.length > 0 && (
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>Ingredients ({displayIngredients.length})</h3>
+          <ul style={styles.list}>
+            {displayIngredients.map((ing, i) => {
+              if (typeof ing === 'string') return <li key={i}>{ing}</li>
+              const parts = []
+              if (ing.qty) parts.push(ing.qty)
+              if (ing.unit) parts.push(ing.unit)
+              if (ing.item) parts.push(ing.item)
+              return <li key={i}>{parts.join(' ')}</li>
+            })}
+          </ul>
+        </div>
+      )}
+
+      {recipe.instructions?.length > 0 && (
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>Instructions ({recipe.instructions.length})</h3>
+          <ol style={styles.list}>
+            {recipe.instructions.map((step, i) => {
+              const text = typeof step === 'string' ? step : step.text || ''
+              return <li key={i}>{text}</li>
+            })}
+          </ol>
+        </div>
+      )}
+
+      <button style={styles.saveBtn} onClick={onSave}>{saveMsg || '💾 Save to Library'}</button>
+    </div>
+  )
+}
+
+function CookMode({ recipe, currentStep, setCurrentStep, servingScale, setServingScale, onBack }) {
+  const [wakeLock, setWakeLock] = useState(null)
+  const [timers, setTimers] = useState({})
+  const servingsNum = parseInt((recipe.servings || '4').replace(/\D/g, '') || '4')
+  const scaledServings = Math.round(servingsNum * servingScale)
+
+  const scaledIngredients = recipe.ingredients.map(ing => {
+    if (typeof ing === 'string') return ing
+    const text = ing.text || ''
+    const qty = ing.qty ? parseQty(ing.qty) : null
+    if (qty === null) return text
+    const scaled = qty * servingScale
+    let formatted = Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1).replace(/\.0$/, '')
+    return `${formatted} ${ing.unit || ''} ${ing.item || text}`.trim()
+  })
+
+  const instructions = (recipe.instructions || []).map((s, i) => typeof s === 'string' ? s : s.text || '')
+  const currentInstruction = instructions[currentStep]
+  const totalSteps = instructions.length
+  const progress = totalSteps > 0 ? ((currentStep + 1) / totalSteps) * 100 : 0
+
+  // Wake lock
+  useEffect(() => {
+    if ('wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then(lock => setWakeLock(lock)).catch(() => {})
+    }
+    return () => { if (wakeLock) wakeLock.release().catch(() => {}) }
+  }, [])
+
+  // Parse timer from step
+  function parseTimer(text) {
+    const match = text.match(/(\d+)\s*(min|mins|minutes?|hr|hrs|hours?|sec|secs|seconds?)/i)
+    if (!match) return null
+    const num = parseInt(match[1])
+    const unit = match[2].toLowerCase()
+    const secs = unit.startsWith('min') ? num * 60 : unit.startsWith('hr') || unit.startsWith('hour') ? num * 3600 : num
+    return secs
+  }
+
+  function startTimer(stepIndex) {
+    const text = instructions[stepIndex]
+    const secs = parseTimer(text)
+    if (!secs) return
+    setTimers(prev => ({ ...prev, [stepIndex]: { secs, remaining: secs, active: true } }))
+    const interval = setInterval(() => {
+      setTimers(prev => {
+        const t = prev[stepIndex]
+        if (!t || !t.active) return prev
+        const newRemaining = t.remaining - 1
+        if (newRemaining <= 0) {
+          clearInterval(interval)
+          return { ...prev, [stepIndex]: { ...t, remaining: 0, active: false, done: true } }
+        }
+        return { ...prev, [stepIndex]: { ...t, remaining: newRemaining } }
+      })
+    }, 1000)
+  }
+
+  function formatTime(secs) {
+    const m = Math.floor(secs / 60)
+    const s = secs % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  return (
+    <div style={styles.cookMode}>
+      {/* Header */}
+      <div style={styles.cookHeader}>
+        <button style={styles.cookBackBtn} onClick={onBack}>← Back</button>
+        <h2 style={styles.cookTitle}>{recipe.title || 'Cook Mode'}</h2>
+        <span style={{ width: '60px' }} />
+      </div>
+
+      {/* Progress Bar */}
+      <div style={styles.progressBar}>
+        <div style={{ ...styles.progressFill, width: `${progress}%` }} />
+      </div>
+
+      {/* Step Counter */}
+      <div style={styles.stepCounter}>
+        Step {currentStep + 1} of {totalSteps}
+      </div>
+
+      {/* Current Step */}
+      <div style={styles.stepCard}>
+        <p style={styles.stepText}>{currentInstruction}</p>
+        {timers[currentStep] && (
+          <div style={styles.timerDisplay}>
+            <span style={styles.timerDigits}>{formatTime(timers[currentStep].remaining)}</span>
+            {timers[currentStep].done && <span style={styles.timerDone}>⏰ Done!</span>}
           </div>
-          <button style={styles.deleteBtn} onClick={() => onDelete(recipe.id)}>
-            🗑 Delete
+        )}
+      </div>
+
+      {/* Timer Button */}
+      {parseTimer(currentInstruction) && !timers[currentStep]?.active && !timers[currentStep]?.done && (
+        <button style={styles.timerBtn} onClick={() => startTimer(currentStep)}>
+          ⏱ Start Timer ({formatTime(parseTimer(currentInstruction))})
+        </button>
+      )}
+
+      {/* Navigation */}
+      <div style={styles.stepNav}>
+        <button
+          style={{ ...styles.stepBtn, opacity: currentStep === 0 ? 0.3 : 1 }}
+          disabled={currentStep === 0}
+          onClick={() => setCurrentStep(s => s - 1)}
+        >
+          ← Previous
+        </button>
+        {currentStep < totalSteps - 1 ? (
+          <button style={styles.stepBtnPrimary} onClick={() => setCurrentStep(s => s + 1)}>
+            Next →
           </button>
+        ) : (
+          <button style={styles.stepBtnPrimary} onClick={onBack}>
+            ✓ Done!
+          </button>
+        )}
+      </div>
+
+      {/* Ingredients (scaled) */}
+      {scaledIngredients.length > 0 && (
+        <div style={styles.cookIngredients}>
+          <h3 style={styles.cookSectionTitle}>Ingredients (for {scaledServings} servings)</h3>
+          <ul style={styles.cookList}>
+            {scaledIngredients.map((item, i) => <li key={i}>{typeof item === 'string' ? item : item.text || JSON.stringify(item)}</li>)}
+          </ul>
         </div>
       )}
     </div>
@@ -532,369 +820,87 @@ function RecipeCard({ recipe, onDelete }) {
 }
 
 const styles = {
-  root: {
-    minHeight: '100vh',
-    background: COLORS.bg,
-    color: COLORS.text,
-    paddingBottom: '80px',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '20px 20px 16px',
-    borderBottom: `1px solid ${COLORS.border}`,
-    position: 'sticky',
-    top: 0,
-    background: COLORS.bg,
-    zIndex: 100,
-  },
-  headerLeft: {
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  logo: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: '28px',
-    fontWeight: 700,
-    color: COLORS.text,
-    letterSpacing: '-0.5px',
-  },
-  tagline: {
-    fontSize: '12px',
-    color: COLORS.textMuted,
-    marginTop: '2px',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
-  syncBadge: {
-    fontSize: '13px',
-    fontWeight: 500,
-  },
-  bottomNav: {
-    position: 'fixed',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    display: 'flex',
-    background: COLORS.surface,
-    borderTop: `1px solid ${COLORS.border}`,
-    padding: '8px 24px',
-    paddingBottom: 'max(8px, env(safe-area-inset-bottom))',
-    zIndex: 100,
-  },
-  navBtn: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-    background: 'transparent',
-    border: 'none',
-    color: COLORS.textMuted,
-    cursor: 'pointer',
-    padding: '8px',
-    borderRadius: '12px',
-    transition: 'all 0.2s',
-  },
-  navBtnActive: {
-    color: COLORS.primary,
-    background: `${COLORS.primary}15`,
-  },
-  navIcon: {
-    fontSize: '22px',
-  },
-  navLabel: {
-    fontSize: '11px',
-    fontWeight: 600,
-    letterSpacing: '0.5px',
-  },
-  main: {
-    padding: '20px',
-  },
-  searchWrapper: {
-    position: 'relative',
-    marginBottom: '12px',
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '14px',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    fontSize: '16px',
-  },
-  searchInput: {
-    width: '100%',
-    padding: '14px 14px 14px 42px',
-    background: COLORS.surface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '14px',
-    color: COLORS.text,
-    fontSize: '15px',
-    outline: 'none',
-    transition: 'border-color 0.2s',
-  },
-  nasBar: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '20px',
-    padding: '10px 14px',
-    background: COLORS.surface,
-    borderRadius: '10px',
-    fontSize: '13px',
-    color: COLORS.textSecondary,
-    flexWrap: 'wrap',
-  },
-  nasCount: {
-    flex: 1,
-  },
-  lastSync: {
-    color: COLORS.textMuted,
-  },
-  restoreBtnSmall: {
-    background: 'transparent',
-    border: `1px solid ${COLORS.border}`,
-    color: COLORS.textSecondary,
-    padding: '6px 12px',
-    borderRadius: '8px',
-    fontSize: '12px',
-    cursor: 'pointer',
-  },
-  grid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  emptyState: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '60px 20px',
-    textAlign: 'center',
-  },
-  emptyIcon: {
-    fontSize: '48px',
-    marginBottom: '16px',
-    opacity: 0.5,
-  },
-  emptyTitle: {
-    fontSize: '20px',
-    fontWeight: 600,
-    marginBottom: '8px',
-    color: COLORS.text,
-  },
-  emptyText: {
-    fontSize: '14px',
-    color: COLORS.textSecondary,
-    marginBottom: '24px',
-  },
-  emptyBtn: {
-    background: COLORS.primary,
-    color: COLORS.text,
-    border: 'none',
-    padding: '14px 28px',
-    borderRadius: '12px',
-    fontSize: '15px',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-  addView: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  tabToggle: {
-    display: 'flex',
-    background: COLORS.surface,
-    borderRadius: '12px',
-    padding: '4px',
-  },
-  tab: {
-    flex: 1,
-    padding: '10px',
-    background: 'transparent',
-    border: 'none',
-    color: COLORS.textSecondary,
-    fontSize: '14px',
-    fontWeight: 500,
-    cursor: 'pointer',
-    borderRadius: '10px',
-    transition: 'all 0.2s',
-  },
-  tabActive: {
-    background: COLORS.primary,
-    color: COLORS.text,
-  },
-  textarea: {
-    width: '100%',
-    padding: '16px',
-    background: COLORS.surface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '14px',
-    color: COLORS.text,
-    fontSize: '15px',
-    lineHeight: 1.6,
-    resize: 'vertical',
-    outline: 'none',
-    minHeight: '200px',
-  },
-  errorBox: {
-    padding: '12px 16px',
-    background: `${COLORS.error}15`,
-    border: `1px solid ${COLORS.error}30`,
-    borderRadius: '10px',
-    color: COLORS.error,
-    fontSize: '14px',
-  },
-  parseBtn: {
-    width: '100%',
-    padding: '16px',
-    background: COLORS.primary,
-    color: COLORS.text,
-    border: 'none',
-    borderRadius: '14px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'background 0.2s',
-  },
-  preview: {
-    background: COLORS.surface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '16px',
-    padding: '20px',
-    marginTop: '8px',
-  },
-  previewTitle: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: '24px',
-    fontWeight: 700,
-    marginBottom: '8px',
-    color: COLORS.text,
-  },
-  previewDesc: {
-    fontSize: '14px',
-    color: COLORS.textSecondary,
-    lineHeight: 1.6,
-    marginBottom: '12px',
-  },
-  metaRow: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  metaChip: {
-    padding: '6px 12px',
-    background: `${COLORS.primary}20`,
-    color: COLORS.primary,
-    borderRadius: '20px',
-    fontSize: '13px',
-    fontWeight: 500,
-  },
-  tagChip: {
-    padding: '6px 12px',
-    background: COLORS.surfaceHover,
-    color: COLORS.textSecondary,
-    borderRadius: '20px',
-    fontSize: '12px',
-    fontWeight: 500,
-  },
-  section: {
-    marginBottom: '16px',
-  },
-  sectionTitle: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: COLORS.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-    marginBottom: '10px',
-  },
-  list: {
-    paddingLeft: '20px',
-    lineHeight: 1.8,
-    fontSize: '15px',
-    color: COLORS.text,
-  },
-  saveBtn: {
-    width: '100%',
-    padding: '16px',
-    background: COLORS.success,
-    color: COLORS.text,
-    border: 'none',
-    borderRadius: '14px',
-    fontSize: '16px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    marginTop: '8px',
-  },
-  card: {
-    background: COLORS.surface,
-    border: `1px solid ${COLORS.border}`,
-    borderRadius: '16px',
-    overflow: 'hidden',
-    transition: 'all 0.2s',
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px',
-    cursor: 'pointer',
-  },
-  cardInfo: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: '17px',
-    fontWeight: 600,
-    marginBottom: '4px',
-  },
-  cardMeta: {
-    display: 'flex',
-    gap: '12px',
-    fontSize: '13px',
-    color: COLORS.textMuted,
-  },
-  expandIcon: {
-    fontSize: '12px',
-    color: COLORS.textMuted,
-    transition: 'transform 0.2s',
-  },
-  cardBody: {
-    padding: '0 16px 16px',
-    borderTop: `1px solid ${COLORS.border}`,
-  },
-  cardDesc: {
-    fontSize: '14px',
-    color: COLORS.textSecondary,
-    lineHeight: 1.6,
-    marginTop: '12px',
-  },
-  cardTags: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '6px',
-    marginTop: '12px',
-  },
-  deleteBtn: {
-    marginTop: '16px',
-    padding: '10px 16px',
-    background: `${COLORS.error}15`,
-    color: COLORS.error,
-    border: `1px solid ${COLORS.error}30`,
-    borderRadius: '10px',
-    fontSize: '14px',
-    cursor: 'pointer',
-    width: '100%',
-  },
+  root: { minHeight: '100vh', background: COLORS.bg, color: COLORS.text, paddingBottom: '90px' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 20px 16px', borderBottom: `1px solid ${COLORS.border}`, position: 'sticky', top: 0, background: COLORS.bg, zIndex: 100 },
+  logo: { fontFamily: "'Playfair Display', serif", fontSize: '28px', fontWeight: 700, letterSpacing: '-0.5px' },
+  tagline: { fontSize: '12px', color: COLORS.textMuted },
+  iconBtn: { background: 'transparent', border: 'none', color: COLORS.text, fontSize: '22px', cursor: 'pointer', padding: '8px', borderRadius: '12px', position: 'relative' },
+  badge: { position: 'absolute', top: '2px', right: '2px', background: COLORS.primary, color: COLORS.text, fontSize: '10px', fontWeight: 700, borderRadius: '10px', padding: '1px 5px', minWidth: '16px', textAlign: 'center' },
+  bottomNav: { position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', background: COLORS.surface, borderTop: `1px solid ${COLORS.border}`, padding: '8px 24px', paddingBottom: 'max(8px, env(safe-area-inset-bottom))', zIndex: 100 },
+  navBtn: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', padding: '8px', borderRadius: '12px', transition: 'all 0.2s', position: 'relative' },
+  navBtnActive: { color: COLORS.primary, background: `${COLORS.primary}15` },
+  navIcon: { fontSize: '22px' },
+  navLabel: { fontSize: '11px', fontWeight: 600, letterSpacing: '0.5px' },
+  main: { padding: '20px' },
+  searchWrapper: { position: 'relative', marginBottom: '12px' },
+  searchIcon: { position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', fontSize: '16px' },
+  searchInput: { width: '100%', padding: '14px 14px 14px 42px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '14px', color: COLORS.text, fontSize: '15px', outline: 'none' },
+  filterRow: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' },
+  filterChip: { padding: '6px 14px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '20px', color: COLORS.textSecondary, fontSize: '13px', cursor: 'pointer', transition: 'all 0.15s' },
+  filterChipActive: { background: COLORS.primary, borderColor: COLORS.primary, color: COLORS.text },
+  clearFilterBtn: { padding: '6px 14px', background: 'transparent', border: 'none', color: COLORS.error, fontSize: '13px', cursor: 'pointer' },
+  nasBar: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', padding: '10px 14px', background: COLORS.surface, borderRadius: '10px', fontSize: '13px', color: COLORS.textSecondary, flexWrap: 'wrap' },
+  restoreBtnSmall: { background: 'transparent', border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary, padding: '6px 12px', borderRadius: '8px', fontSize: '12px', cursor: 'pointer' },
+  grid: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  emptyState: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' },
+  primaryBtn: { width: '100%', padding: '16px', background: COLORS.primary, color: COLORS.text, border: 'none', borderRadius: '14px', fontSize: '16px', fontWeight: 600, cursor: 'pointer' },
+  card: { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '16px', overflow: 'hidden' },
+  cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px', cursor: 'pointer' },
+  cardPhoto: { width: '100%', height: '120px', objectFit: 'cover', borderRadius: '8px', marginBottom: '10px' },
+  cardTitle: { fontFamily: "'Playfair Display', serif", fontSize: '17px', fontWeight: 600, flex: 1 },
+  favoriteBtn: { background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '2px' },
+  cardMeta: { display: 'flex', gap: '12px', fontSize: '13px', color: COLORS.textMuted, marginTop: '6px', flexWrap: 'wrap' },
+  tag: { background: COLORS.surfaceHover, color: COLORS.textSecondary, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' },
+  expandIcon: { fontSize: '12px', color: COLORS.textMuted, transition: 'transform 0.2s', marginTop: '4px' },
+  cardBody: { padding: '0 16px 16px', borderTop: `1px solid ${COLORS.border}` },
+  cardDesc: { fontSize: '14px', color: COLORS.textSecondary, lineHeight: 1.6, marginTop: '12px' },
+  cardSection: { marginTop: '14px' },
+  cardSectionTitle: { fontSize: '12px', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' },
+  list: { paddingLeft: '20px', lineHeight: 1.8, fontSize: '15px' },
+  cardActions: { display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' },
+  cookBtn: { flex: 1, padding: '10px', background: COLORS.success, color: COLORS.text, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  groceryBtn: { flex: 1, padding: '10px', background: COLORS.secondary + '20', color: COLORS.secondary, border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' },
+  deleteBtn: { padding: '10px 12px', background: COLORS.error + '15', color: COLORS.error, border: 'none', borderRadius: '10px', fontSize: '14px', cursor: 'pointer' },
+  tabToggle: { display: 'flex', background: COLORS.surface, borderRadius: '12px', padding: '4px' },
+  tab: { flex: 1, padding: '10px', background: 'transparent', border: 'none', color: COLORS.textSecondary, fontSize: '14px', fontWeight: 500, cursor: 'pointer', borderRadius: '10px', transition: 'all 0.2s' },
+  tabActive: { background: COLORS.primary, color: COLORS.text },
+  textarea: { width: '100%', padding: '16px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '14px', color: COLORS.text, fontSize: '15px', lineHeight: 1.6, resize: 'vertical', outline: 'none', minHeight: '200px' },
+  errorBox: { padding: '12px 16px', background: `${COLORS.error}15`, border: `1px solid ${COLORS.error}30`, borderRadius: '10px', color: COLORS.error, fontSize: '14px' },
+  preview: { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '16px', padding: '20px' },
+  servingScaler: { display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: COLORS.surfaceHover, borderRadius: '10px', marginBottom: '14px', flexWrap: 'wrap' },
+  servingControls: { display: 'flex', alignItems: 'center', gap: '8px' },
+  servingBtn: { width: '32px', height: '32px', borderRadius: '50%', border: `1px solid ${COLORS.border}`, background: COLORS.surface, color: COLORS.text, fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  metaRow: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' },
+  metaChip: { padding: '6px 12px', background: `${COLORS.primary}20`, color: COLORS.primary, borderRadius: '20px', fontSize: '13px', fontWeight: 500 },
+  tagChip: { padding: '6px 12px', background: COLORS.surfaceHover, color: COLORS.textSecondary, borderRadius: '20px', fontSize: '12px', fontWeight: 500 },
+  section: { marginBottom: '16px' },
+  sectionTitle: { fontSize: '13px', fontWeight: 600, color: COLORS.textSecondary, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' },
+  saveBtn: { width: '100%', padding: '16px', background: COLORS.success, color: COLORS.text, border: 'none', borderRadius: '14px', fontSize: '16px', fontWeight: 600, cursor: 'pointer', marginTop: '8px' },
+  // Cook Mode
+  cookMode: { minHeight: '100vh', display: 'flex', flexDirection: 'column' },
+  cookHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: `1px solid ${COLORS.border}` },
+  cookBackBtn: { background: 'transparent', border: 'none', color: COLORS.primary, fontSize: '15px', cursor: 'pointer', padding: '8px' },
+  cookTitle: { fontFamily: "'Playfair Display', serif", fontSize: '18px', fontWeight: 600, textAlign: 'center', flex: 1, padding: '0 12px' },
+  progressBar: { height: '4px', background: COLORS.surface, width: '100%' },
+  progressFill: { height: '100%', background: COLORS.primary, transition: 'width 0.3s ease' },
+  stepCounter: { textAlign: 'center', padding: '20px', fontSize: '14px', color: COLORS.textMuted, fontWeight: 500 },
+  stepCard: { background: COLORS.surface, borderRadius: '20px', padding: '32px 24px', margin: '0 20px', textAlign: 'center', border: `1px solid ${COLORS.border}` },
+  stepText: { fontSize: '22px', lineHeight: 1.6, fontWeight: 400 },
+  timerDisplay: { marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' },
+  timerDigits: { fontSize: '48px', fontFamily: "'Roboto Mono', monospace", fontWeight: 700, color: COLORS.primary },
+  timerDone: { fontSize: '18px', color: COLORS.success, fontWeight: 600 },
+  timerBtn: { margin: '16px auto', display: 'block', padding: '14px 28px', background: COLORS.accent, color: '#000', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: 700, cursor: 'pointer' },
+  stepNav: { display: 'flex', gap: '12px', padding: '20px', marginTop: 'auto' },
+  stepBtn: { flex: 1, padding: '16px', background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '14px', color: COLORS.text, fontSize: '15px', fontWeight: 600, cursor: 'pointer' },
+  stepBtnPrimary: { flex: 1, padding: '16px', background: COLORS.primary, border: 'none', borderRadius: '14px', color: COLORS.text, fontSize: '15px', fontWeight: 600, cursor: 'pointer' },
+  cookIngredients: { padding: '20px', margin: '20px', background: COLORS.surface, borderRadius: '16px', border: `1px solid ${COLORS.border}` },
+  cookSectionTitle: { fontSize: '14px', fontWeight: 600, color: COLORS.textSecondary, marginBottom: '12px' },
+  cookList: { paddingLeft: '20px', lineHeight: 2, fontSize: '15px' },
+  // Grocery
+  clearBtn: { padding: '8px 16px', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '10px', color: COLORS.textSecondary, fontSize: '13px', cursor: 'pointer' },
+  groceryList: { display: 'flex', flexDirection: 'column', gap: '8px' },
+  groceryItem: { display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', background: COLORS.surface, borderRadius: '12px', cursor: 'pointer', transition: 'all 0.15s' },
+  groceryItemChecked: { opacity: 0.5, textDecoration: 'line-through' },
+  groceryCheck: { width: '24px', height: '24px', borderRadius: '50%', border: `2px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 },
+  groceryCheckChecked: { background: COLORS.success, borderColor: COLORS.success, color: COLORS.text },
 }
-
-export default App
