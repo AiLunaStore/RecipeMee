@@ -53,9 +53,13 @@ async function fetchYouTubeTranscriptBrowser(videoId) {
   if (!detailsRes.ok) throw new Error('YouTube API unavailable')
   const details = await detailsRes.json()
   if (!details.items?.length) throw new Error('Video not found')
-  const description = details.items[0].snippet?.description || ''
+  const snippet = details.items[0].snippet || {}
+  const description = snippet.description || ''
+  // Get highest quality thumbnail
+  const thumbnails = snippet.thumbnails || {}
+  const thumbnail = thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.medium?.url || thumbnails.standard?.url || ''
   if (description.length < 50) throw new Error('No description found')
-  return description
+  return { description, thumbnail }
 }
 
 async function fetchRecipeURL(pageUrl) {
@@ -71,7 +75,7 @@ async function fetchRecipeURL(pageUrl) {
 
   // Limit text to 8000 chars to avoid overwhelming the LLM
   let text = (data.text || '').substring(0, 8000)
-  return text
+  return { text, photoUrl: data.photoUrl || '' }
 }
 
 function parseRecipeWithLLM(rawText) {
@@ -267,6 +271,7 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [saveMsg, setSaveMsg] = useState('')
   const [fetchingTranscript, setFetchingTranscript] = useState(false)
+  const [sourceUrl, setSourceUrl] = useState('')
   const [syncStatus, setSyncStatus] = useState('')
   const [lastSync, setLastSync] = useState(localStorage.getItem('recipemee_last_sync') || '')
   const [nasCount, setNasCount] = useState(null)
@@ -351,14 +356,18 @@ export default function App() {
       // YouTube URL — get description via API
       if (isYouTubeURL(textToParse)) {
         setFetchingTranscript(true)
+        setSourceUrl(textToParse)
         try {
           const videoId = extractVideoId(textToParse)
           if (!videoId) throw new Error('Could not extract video ID from this YouTube URL')
-          const description = await fetchYouTubeTranscriptBrowser(videoId)
-          if (!description || description.length < 50) {
+          const result = await fetchYouTubeTranscriptBrowser(videoId)
+          if (!result.description || result.description.length < 50) {
             throw new Error('This video has no description. Try copying the recipe text manually.')
           }
-          textToParse = description
+          textToParse = result.description
+          if (result.thumbnail) {
+            setParsed(prev => ({ ...prev, photoUrl: result.thumbnail }))
+          }
         } catch (e) {
           setFetchingTranscript(false)
           setError(e.message)
@@ -369,12 +378,17 @@ export default function App() {
       } else if (textToParse.startsWith('http://') || textToParse.startsWith('https://')) {
         // Generic URL — fetch page content
         setFetchingTranscript(true)
+        setSourceUrl(textToParse) // remember URL for saving
         try {
-          const pageText = await fetchRecipeURL(textToParse)
-          if (!pageText || pageText.length < 100) {
+          const result = await fetchRecipeURL(textToParse)
+          if (!result.text || result.text.length < 100) {
             throw new Error('Could not read this page. Try copying the recipe text manually instead.')
           }
-          textToParse = pageText
+          textToParse = result.text
+          // Also store photoUrl for later
+          if (result.photoUrl) {
+            setParsed(prev => ({ ...prev, photoUrl: result.photoUrl }))
+          }
         } catch (e) {
           setFetchingTranscript(false)
           setError(e.message)
@@ -382,6 +396,8 @@ export default function App() {
           return
         }
         setFetchingTranscript(false)
+      } else {
+        setSourceUrl('') // plain text, no source URL
       }
       // Plain text — use as-is
 
@@ -468,6 +484,7 @@ export default function App() {
       ingredients,
       tags: autoTags.length > 0 ? autoTags : parsed.tags || [],
       photoUrl: parsed.photoUrl || '',
+      sourceUrl: sourceUrl || parsed.sourceUrl || '',
       id: Date.now(),
       savedAt: new Date().toISOString(),
       favorite: false,
@@ -707,20 +724,47 @@ function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGr
 
   return (
     <div style={styles.card}>
+      {recipe.photoUrl && (
+        <div style={styles.cardPhotoWrapper} onClick={() => setExpanded(!expanded)}>
+          <img src={recipe.photoUrl} alt={recipe.title} style={styles.cardPhoto} onError={e => e.target.style.display = 'none'} />
+          {recipe.sourceUrl && (
+            <a
+              href={recipe.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.photoLink}
+              onClick={e => e.stopPropagation()}
+              title="View original recipe"
+            >
+              🔗
+            </a>
+          )}
+        </div>
+      )}
       <div style={styles.cardHeader} onClick={() => setExpanded(!expanded)}>
         <div style={{ flex: 1 }}>
-          {recipe.photoUrl && (
-            <img src={recipe.photoUrl} alt="" style={styles.cardPhoto} onError={e => e.target.style.display = 'none'} />
+          {!recipe.photoUrl && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <h3 style={styles.cardTitle}>{recipe.title || 'Untitled'}</h3>
+              <button
+                style={{ ...styles.favoriteBtn, color: recipe.favorite ? COLORS.star : COLORS.textMuted }}
+                onClick={e => { e.stopPropagation(); onToggleFavorite(recipe.id) }}
+              >
+                {recipe.favorite ? '♥' : '♡'}
+              </button>
+            </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <h3 style={styles.cardTitle}>{recipe.title || 'Untitled'}</h3>
-            <button
-              style={{ ...styles.favoriteBtn, color: recipe.favorite ? COLORS.star : COLORS.textMuted }}
-              onClick={e => { e.stopPropagation(); onToggleFavorite(recipe.id) }}
-            >
-              {recipe.favorite ? '♥' : '♡'}
-            </button>
-          </div>
+          {recipe.photoUrl && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', paddingTop: '12px' }}>
+              <h3 style={styles.cardTitle}>{recipe.title || 'Untitled'}</h3>
+              <button
+                style={{ ...styles.favoriteBtn, color: recipe.favorite ? COLORS.star : COLORS.textMuted }}
+                onClick={e => { e.stopPropagation(); onToggleFavorite(recipe.id) }}
+              >
+                {recipe.favorite ? '♥' : '♡'}
+              </button>
+            </div>
+          )}
           <div style={styles.cardMeta}>
             {recipe.servings && <span>🍽 {recipe.servings}</span>}
             {recipe.totalTime && <span>⏱ {recipe.totalTime}</span>}
@@ -732,6 +776,16 @@ function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGr
 
       {expanded && (
         <div style={styles.cardBody}>
+          {recipe.sourceUrl && (
+            <a
+              href={recipe.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={styles.sourceLink}
+            >
+              🔗 View Original Recipe
+            </a>
+          )}
           {recipe.description && <p style={styles.cardDesc}>{recipe.description}</p>}
           {recipe.tags?.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
@@ -782,10 +836,19 @@ function RecipePreview({ recipe, scaledIngredients, servingScale, setServingScal
 
   return (
     <div style={styles.preview}>
+      {recipe.photoUrl && (
+        <img src={recipe.photoUrl} alt={recipe.title} style={{ width: '100%', height: '180px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }} onError={e => e.target.style.display = 'none'} />
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: '24px', fontWeight: 700 }}>{recipe.title || 'Untitled'}</h2>
+        <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: '24px', fontWeight: 700, flex: 1 }}>{recipe.title || 'Untitled'}</h2>
         <button style={styles.favoriteBtn} onClick={e => e.stopPropagation()}>♡</button>
       </div>
+
+      {recipe.sourceUrl && (
+        <a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer" style={styles.sourceLink}>
+          🔗 View Original Recipe
+        </a>
+      )}
 
       {recipe.description && <p style={{ fontSize: '14px', color: COLORS.textSecondary, lineHeight: 1.6, marginBottom: '12px' }}>{recipe.description}</p>}
 
@@ -1012,7 +1075,10 @@ const styles = {
   primaryBtn: { width: '100%', padding: '16px', background: COLORS.primary, color: COLORS.text, border: 'none', borderRadius: '14px', fontSize: '16px', fontWeight: 600, cursor: 'pointer' },
   card: { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: '16px', overflow: 'hidden' },
   cardHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '16px', cursor: 'pointer' },
-  cardPhoto: { width: '100%', height: '120px', objectFit: 'cover', borderRadius: '8px', marginBottom: '10px' },
+  cardPhotoWrapper: { position: 'relative', cursor: 'pointer' },
+  cardPhoto: { width: '100%', height: '160px', objectFit: 'cover', display: 'block' },
+  photoLink: { position: 'absolute', top: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', color: COLORS.text, padding: '6px 8px', borderRadius: '8px', fontSize: '14px', textDecoration: 'none' },
+  sourceLink: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: COLORS.primary, fontSize: '13px', textDecoration: 'none', marginBottom: '8px', fontWeight: 500 },
   cardTitle: { fontFamily: "'Playfair Display', serif", fontSize: '17px', fontWeight: 600, flex: 1 },
   favoriteBtn: { background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '2px' },
   cardMeta: { display: 'flex', gap: '12px', fontSize: '13px', color: COLORS.textMuted, marginTop: '6px', flexWrap: 'wrap' },

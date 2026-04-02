@@ -63,7 +63,6 @@ async function handleFetchUrl(url) {
   const targetUrl = url.searchParams.get('url')
   if (!targetUrl) return jsonResponse({ error: 'Missing url parameter' }, 400)
 
-  // Basic URL validation
   try {
     const parsed = new URL(targetUrl)
     if (!['http:', 'https:'].includes(parsed.protocol)) {
@@ -93,13 +92,24 @@ async function handleFetchUrl(url) {
 
     const html = await response.text()
 
-    // Extract readable text from HTML
+    // Extract og:image (Open Graph image - main recipe photo)
+    let photoUrl = extractMetaContent(html, 'og:image')
+      || extractMetaContent(html, 'twitter:image')
+      || extractMetaContent(html, 'og:image:url')
+      || ''
+
+    // If relative URL, make it absolute
+    if (photoUrl && photoUrl.startsWith('/')) {
+      const urlObj = new URL(targetUrl)
+      photoUrl = urlObj.origin + photoUrl
+    }
+
     const text = extractReadableText(html)
 
     return jsonResponse({
       url: targetUrl,
-      text: text.substring(0, 15000), // Limit to 15k chars
-      rawLength: html.length,
+      text: text.substring(0, 15000),
+      photoUrl,
     })
   } catch (e) {
     return jsonResponse({ error: 'Failed to fetch URL: ' + e.message }, 500)
@@ -107,14 +117,12 @@ async function handleFetchUrl(url) {
 }
 
 function extractReadableText(html) {
-  // Remove script and style tags
   let text = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
 
-  // Replace common block elements with newlines
   text = text
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
@@ -130,6 +138,18 @@ function extractReadableText(html) {
     .trim()
 
   return text
+}
+
+function extractMetaContent(html, property) {
+  // og:image
+  const ogMatch = html.match(new RegExp(`<meta[^>]*(?:property|property)=["']${property}["'][^>]*content=["']([^"']+)["'][^>]*>`, 'i'))
+  if (ogMatch) return ogMatch[1]
+
+  // Also try reversed attribute order
+  const ogMatch2 = html.match(new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']${property}["'][^>]*>`, 'i'))
+  if (ogMatch2) return ogMatch2[1]
+
+  return null
 }
 
 function jsonResponse(data, status = 200) {
