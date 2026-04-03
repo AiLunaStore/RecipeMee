@@ -164,10 +164,19 @@ def chat():
   "ingredients": [{"text": "full ingredient text", "qty": "2", "unit": "cups", "item": "flour"}],
   "instructions": [{"text": "step text", "timer": "5 mins"}],
   "tags": ["Breakfast", "Dinner", "Healthy"],
-  "photoUrl": ""
+  "photoUrl": "",
+  "nutrition": {
+    "calories": "350 kcal",
+    "protein": "25g",
+    "carbs": "40g",
+    "fat": "12g",
+    "fiber": "6g",
+    "sugar": "8g",
+    "sodium": "580mg"
+  }
 }
 
-IMPORTANT: Return ONLY the JSON object, nothing else. No markdown, no explanation."""
+IMPORTANT: Return ONLY the JSON object, nothing else. No markdown, no explanation. Estimate nutrition per serving based on ingredients — include calories, protein, carbs, fat, fiber (and sugar/sodium if identifiable)."""
 
         response = client.chat_completion(
             model='deepseek-chat',

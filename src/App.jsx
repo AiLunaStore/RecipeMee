@@ -163,7 +163,8 @@ Return ONLY the JSON, nothing else.`
         ingredients: [],
         instructions: [],
         tags: [],
-        photoUrl: ''
+        photoUrl: '',
+        nutrition: null
       }
     }
 
@@ -785,6 +786,7 @@ function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGr
           <div style={styles.cardMeta}>
             {recipe.servings && <span>🍽 {recipe.servings}</span>}
             {recipe.totalTime && <span>⏱ {recipe.totalTime}</span>}
+            {recipe.nutrition?.calories && <span>🔥 {recipe.nutrition.calories}</span>}
             {recipe.tags?.slice(0, 2).map(tag => <span key={tag} style={styles.tag}>{tag}</span>)}
           </div>
         </div>
@@ -807,6 +809,16 @@ function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGr
           {recipe.tags?.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
               {recipe.tags.map(tag => <span key={tag} style={styles.tag}>{tag}</span>)}
+            </div>
+          )}
+
+          {recipe.nutrition && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px', padding: '10px', background: '#1a1a1a', borderRadius: '8px' }}>
+              {recipe.nutrition.calories && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🔥 {recipe.nutrition.calories}</span>}
+              {recipe.nutrition.protein && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>💪 P: {recipe.nutrition.protein}</span>}
+              {recipe.nutrition.carbs && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🍞 C: {recipe.nutrition.carbs}</span>}
+              {recipe.nutrition.fat && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🧈 F: {recipe.nutrition.fat}</span>}
+              {recipe.nutrition.fiber && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🌾 Fiber: {recipe.nutrition.fiber}</span>}
             </div>
           )}
 
@@ -887,6 +899,18 @@ function RecipePreview({ recipe, scaledIngredients, servingScale, setServingScal
         {recipe.totalTime && <span style={styles.metaChip}>⏱ {recipe.totalTime}</span>}
         {recipe.tags?.map(tag => <span key={tag} style={styles.tagChip}>{tag}</span>)}
       </div>
+
+      {recipe.nutrition && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px', background: '#1a1a1a', borderRadius: '10px', marginBottom: '16px' }}>
+          {recipe.nutrition.calories && <span style={{ color: '#A1A1AA', fontSize: '14px', fontWeight: 600 }}>🔥 {recipe.nutrition.calories}</span>}
+          {recipe.nutrition.protein && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>💪 {recipe.nutrition.protein} protein</span>}
+          {recipe.nutrition.carbs && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>🍞 {recipe.nutrition.carbs} carbs</span>}
+          {recipe.nutrition.fat && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>🧈 {recipe.nutrition.fat} fat</span>}
+          {recipe.nutrition.fiber && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>🌾 {recipe.nutrition.fiber} fiber</span>}
+          {recipe.nutrition.sugar && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>🍬 {recipe.nutrition.sugar} sugar</span>}
+          {recipe.nutrition.sodium && <span style={{ color: '#A1A1AA', fontSize: '14px' }}>🧂 {recipe.nutrition.sodium} sodium</span>}
+        </div>
+      )}
 
       {displayIngredients.length > 0 && (
         <div style={styles.section}>
