@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 const WORKER_URL = 'https://levin-nas-1.tail065159.ts.net/chat'
-const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
+const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
 const MODEL = 'deepseek-chat'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 const NAS_SCRAPE_URL = 'https://levin-nas-1.tail065159.ts.net/scrape'
