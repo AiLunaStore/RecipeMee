@@ -58,7 +58,33 @@ def backup():
 def scrape():
     if request.method == 'OPTIONS':
         return '', 204
-    target_url = request.args.get('url')
+
+    # Handle YouTube URLs specially - use the Data API to get description
+    if 'youtube.com' in target_url or 'youtu.be' in target_url:
+        video_id = None
+        match = re.search(r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})', target_url)
+        if match:
+            video_id = match.group(1)
+        if not video_id:
+            return jsonify({'error': 'Could not extract YouTube video ID'}), 400
+        api_key = os.environ.get('YOUTUBE_API_KEY', 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I')
+        api_url = f'https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id={video_id}&key={api_key}'
+        try:
+            api_resp = requests.get(api_url, timeout=10)
+            if not api_resp.ok:
+                return jsonify({'error': 'YouTube API unavailable'}), 502
+            api_data = api_resp.json()
+            items = api_data.get('items', [])
+            if not items:
+                return jsonify({'error': 'YouTube video not found'}), 404
+            snippet = items[0].get('snippet', {})
+            description = snippet.get('description', '')
+            thumbnails = snippet.get('thumbnails', {})
+            thumbnail = (thumbnails.get('maxres') or thumbnails.get('high') or thumbnails.get('medium') or thumbnails.get('standard') or {}).get('url', '')
+            return jsonify({'url': target_url, 'text': description, 'photoUrl': thumbnail})
+        except Exception as e:
+            return jsonify({'error': f'YouTube API error: {str(e)}'}), 500
+
     if not target_url:
         return jsonify({'error': 'Missing url parameter'}), 400
     try:
@@ -72,7 +98,7 @@ def scrape():
             'User-Agent': USER_AGENT,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
         }, verify='/etc/ssl/certs/ca-certificates.crt')
         resp.raise_for_status()
@@ -185,3 +211,36 @@ if __name__ == '__main__':
     print(f'RecipeMee NAS Server running on port {port}')
     http_server = WSGIServer(('0.0.0.0', port), app)
     http_server.serve_forever()
+
+@app.route('/youtube', methods=['GET', 'OPTIONS'])
+def youtube_transcript():
+    """Fetch YouTube video description via Data API v3"""
+    video_id = request.args.get('id') or request.args.get('video_id', '')
+    if not video_id:
+        return jsonify({'error': 'Missing video ID'}), 400
+
+    api_key = os.environ.get('YOUTUBE_API_KEY', 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I')
+    url = f'https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id={video_id}&key={api_key}'
+    
+    try:
+        resp = requests.get(url, timeout=10)
+        if not resp.ok:
+            return jsonify({'error': 'YouTube API unavailable'}), 502
+        data = resp.json()
+        items = data.get('items', [])
+        if not items:
+            return jsonify({'error': 'Video not found'}), 404
+        snippet = items[0].get('snippet', {})
+        description = snippet.get('description', '')
+        thumbnails = snippet.get('thumbnails', {})
+        thumbnail = (
+            thumbnails.get('maxres', {}) or
+            thumbnails.get('high', {}) or
+            thumbnails.get('medium', {}) or
+            thumbnails.get('standard', {})
+        ).get('url', '')
+        if len(description) < 50:
+            return jsonify({'error': 'No description found'}), 422
+        return jsonify({'description': description, 'thumbnail': thumbnail})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
