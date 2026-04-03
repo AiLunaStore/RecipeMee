@@ -96,7 +96,7 @@ def scrape():
         article = soup.find('article') or soup.find('main') or soup.find('div', id=re.compile(r'content|recipe|main', re.I)) or soup
         text = article.get_text(separator='\n', strip=True)
         text = re.sub(r'\n{3,}', '\n\n', text).strip()
-        return jsonify({'url': target_url, 'text': text[:15000], 'photoUrl': photo_url or ''})
+        return jsonify({'url': target_url, 'text': text[:15000], 'photoUrl': (photo_url or '').replace('&amp;', '&')})
     except requests.exceptions.Timeout:
         return jsonify({'error': 'Request timed out'}), 500
     except requests.exceptions.HTTPError as e:
