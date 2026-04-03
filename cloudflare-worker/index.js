@@ -1,21 +1,26 @@
 /**
  * RecipeMee Cloudflare Worker
- * Handles: YouTube API, generic URL fetching for recipe pages
+ * Handles: YouTube API, generic URL fetching for recipe pages, LLM chat proxy
  */
 
-const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
+const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
+const MINIMAX_BASE = 'https://api.minimax.io/anthropic'
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url)
 
     if (request.method === 'OPTIONS') {
       return new Response('', {
         headers: {
           'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         }
       })
+    }
+
+    if (url.pathname === '/chat') {
+      return handleChat(request, env)
     }
 
     if (url.pathname === '/youtube-transcript') {
@@ -28,6 +33,90 @@ export default {
 
     return jsonResponse({ error: 'Not found' }, 404)
   }
+}
+
+async function handleChat(request, env) {
+  if (request.method !== 'POST') {
+    return jsonResponse({ error: 'Method not allowed' }, 405)
+  }
+
+  const MINIMAX_API_KEY = env.MINIMAX_API_KEY || ''
+
+  try {
+    const body = await request.json()
+    const { model = 'minimax-m2', messages, max_tokens = 4000 } = body
+
+    // Convert OpenAI format to Anthropic format
+    const anthropicMessages = messages.map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : m.role,
+      content: m.content,
+    }))
+
+    const response = await fetch(`${MINIMAX_BASE}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${MINIMAX_API_KEY}`,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        messages: anthropicMessages,
+        max_tokens,
+      }),
+    })
+
+    const data = await response.json()
+
+    // Convert Anthropic response to OpenAI chat completions format
+    if (data.id) {
+      const openAIResponse = {
+        id: data.id,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: data.model,
+        choices: [{
+          index: 0,
+          message: {
+            role: 'assistant',
+            content: extractTextContent(data.content),
+          },
+          finish_reason: data.stop_reason || 'stop',
+        }],
+        usage: data.usage ? {
+          prompt_tokens: data.usage.input_tokens,
+          completion_tokens: data.usage.output_tokens,
+          total_tokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+        } : undefined,
+      }
+      return new Response(JSON.stringify(openAIResponse), {
+        status: response.status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    }
+
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    })
+  } catch (e) {
+    return jsonResponse({ error: e.message }, 500)
+  }
+}
+
+function extractTextContent(content) {
+  if (!content) return ''
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content.filter(c => c.type === 'text').map(c => c.text).join('')
+  }
+  return String(content)
 }
 
 async function handleYouTubeTranscript(url) {
