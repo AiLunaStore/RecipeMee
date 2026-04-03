@@ -745,8 +745,45 @@ export default function App() {
 
 function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGrocery }) {
   const [expanded, setExpanded] = useState(false)
+  const [cardScale, setCardScale] = useState(1)
   const hasIngredients = recipe.ingredients?.length > 0
   const hasInstructions = recipe.instructions?.length > 0
+  const servingsNum = parseInt((recipe.servings || '4').replace(/\D/g, '') || '4')
+  const scaledServings = Math.round(servingsNum * cardScale)
+
+  // Scale a single ingredient qty
+  function scaleIngQty(ing) {
+    if (!ing || !ing.qty) return ing
+    const qty = parseQty(ing.qty)
+    if (!qty) return ing
+    const scaled = qty * cardScale
+    return { ...ing, qty: scaled % 1 === 0 ? String(scaled) : scaled.toFixed(1).replace(/\.0$/, '') }
+  }
+
+  // Scale nutrition by cardScale
+  function scaleNutrition(nutrition) {
+    if (!nutrition) return null
+    function scaleVal(val, key) {
+      if (!val) return val
+      const match = val.match(/^([\d.]+)\s*(.*)/)
+      if (!match) return val
+      const num = parseFloat(match[1])
+      if (isNaN(num)) return val
+      const scaled = num * cardScale
+      return `${scaled.toFixed(0)}${match[2]}`
+    }
+    return {
+      calories: scaleVal(nutrition.calories),
+      protein: scaleVal(nutrition.protein),
+      carbs: scaleVal(nutrition.carbs),
+      fat: scaleVal(nutrition.fat),
+      fiber: scaleVal(nutrition.fiber),
+      sugar: scaleVal(nutrition.sugar),
+      sodium: scaleVal(nutrition.sodium),
+    }
+  }
+
+  const scaledNutrition = cardScale !== 1 ? scaleNutrition(recipe.nutrition) : recipe.nutrition
 
   return (
     <div style={styles.card}>
@@ -820,22 +857,46 @@ function RecipeCard({ recipe, onDelete, onToggleFavorite, onEnterCook, onAddToGr
             </div>
           )}
 
-          {recipe.nutrition && (
+          {scaledNutrition && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px', padding: '10px', background: '#1a1a1a', borderRadius: '8px' }}>
-              {recipe.nutrition.calories && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🔥 {recipe.nutrition.calories}</span>}
-              {recipe.nutrition.protein && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>💪 P: {recipe.nutrition.protein}</span>}
-              {recipe.nutrition.carbs && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🍞 C: {recipe.nutrition.carbs}</span>}
-              {recipe.nutrition.fat && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🧈 F: {recipe.nutrition.fat}</span>}
-              {recipe.nutrition.fiber && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🌾 Fiber: {recipe.nutrition.fiber}</span>}
+              {scaledNutrition.calories && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🔥 {scaledNutrition.calories}{cardScale !== 1 ? ` (×${cardScale})` : ''}</span>}
+              {scaledNutrition.protein && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>💪 P: {scaledNutrition.protein}</span>}
+              {scaledNutrition.carbs && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🍞 C: {scaledNutrition.carbs}</span>}
+              {scaledNutrition.fat && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🧈 F: {scaledNutrition.fat}</span>}
+              {scaledNutrition.fiber && <span style={{ color: '#A1A1AA', fontSize: '13px' }}>🌾 Fiber: {scaledNutrition.fiber}</span>}
             </div>
           )}
 
           {hasIngredients && (
             <div style={styles.cardSection}>
-              <h4 style={styles.cardSectionTitle}>Ingredients</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <h4 style={styles.cardSectionTitle}>Ingredients</h4>
+                {cardScale !== 1 && (
+                  <span style={{ fontSize: '11px', color: COLORS.textMuted }}>(×{cardScale} scale)</span>
+                )}
+              </div>
+              {/* Serving Scaler */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '8px 10px', background: COLORS.surfaceHover, borderRadius: '8px' }}>
+                <span style={{ fontSize: '12px', color: COLORS.textSecondary }}>Servings:</span>
+                <button style={{ ...styles.servingBtn, fontSize: '14px', padding: '2px 8px' }} onClick={() => setCardScale(s => Math.max(0.5, s - 0.5))}>−</button>
+                <span style={{ fontWeight: 600, fontSize: '14px', minWidth: '60px', textAlign: 'center' }}>{scaledServings}</span>
+                <button style={{ ...styles.servingBtn, fontSize: '14px', padding: '2px 8px' }} onClick={() => setCardScale(s => s + 0.5)}>+</button>
+                {cardScale !== 1 && (
+                  <button style={{ fontSize: '11px', color: COLORS.primary, background: 'none', border: 'none', cursor: 'pointer', marginLeft: '4px' }} onClick={() => setCardScale(1)}>Reset</button>
+                )}
+              </div>
               <ul style={styles.list}>
                 {recipe.ingredients.map((ing, i) => {
-                  const text = typeof ing === 'string' ? ing : ing.text || ''
+                  if (cardScale === 1) {
+                    const text = typeof ing === 'string' ? ing : ing.text || ''
+                    return <li key={i}>{text}</li>
+                  }
+                  const scaled = scaleIngQty(ing)
+                  const parts = []
+                  if (scaled.qty) parts.push(scaled.qty)
+                  if (scaled.unit) parts.push(scaled.unit)
+                  if (scaled.item) parts.push(scaled.item)
+                  const text = parts.join(' ')
                   return <li key={i}>{text}</li>
                 })}
               </ul>
