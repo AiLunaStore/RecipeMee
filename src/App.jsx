@@ -4,6 +4,7 @@ const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
 const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
 const MODEL = 'minimax-m2'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
+const NAS_SCRAPE_URL = 'https://levin-nas-1.tail065159.ts.net/scrape'
 
 const COLORS = {
   bg: '#0D0D0D',
@@ -63,8 +64,8 @@ async function fetchYouTubeTranscriptBrowser(videoId) {
 }
 
 async function fetchRecipeURL(pageUrl) {
-  // Use our Cloudflare Worker to fetch the URL content
-  const proxyUrl = `https://recipemee-transcript.recipemee.workers.dev/fetch-url?url=${encodeURIComponent(pageUrl)}`
+  // Use our NAS (residential IP) to fetch the URL - bypasses recipe site blocks
+  const proxyUrl = `${NAS_SCRAPE_URL}?url=${encodeURIComponent(pageUrl)}`
   const response = await fetch(proxyUrl)
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Unknown error' }))
