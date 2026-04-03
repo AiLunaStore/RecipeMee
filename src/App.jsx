@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 const WORKER_URL = 'https://levin-nas-1.tail065159.ts.net/chat'
-const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
+
 const MODEL = 'deepseek-chat'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 const NAS_SCRAPE_URL = 'https://levin-nas-1.tail065159.ts.net/scrape'
@@ -49,19 +49,22 @@ function extractVideoId(url) {
 }
 
 async function fetchYouTubeTranscriptBrowser(videoId) {
-  const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
-  const detailsRes = await fetch(detailsUrl)
-  if (!detailsRes.ok) throw new Error('YouTube API unavailable')
-  const details = await detailsRes.json()
-  if (!details.items?.length) throw new Error('Video not found')
-  const snippet = details.items[0].snippet || {}
+  // Use YouTube Data API v3 directly from browser
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('YouTube API unavailable')
+  const data = await response.json()
+  if (!data.items?.length) throw new Error('Video not found')
+  const snippet = data.items[0].snippet || {}
   const description = snippet.description || ''
-  // Get highest quality thumbnail
   const thumbnails = snippet.thumbnails || {}
   const thumbnail = thumbnails.maxres?.url || thumbnails.high?.url || thumbnails.medium?.url || thumbnails.standard?.url || ''
   if (description.length < 50) throw new Error('No description found')
   return { description, thumbnail }
 }
+
+// YouTube API key (browser-compatible key with referrer restriction - works in browser context)
+const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
 
 async function fetchRecipeURL(pageUrl) {
   // Use our NAS (residential IP) to fetch the URL - bypasses recipe site blocks
