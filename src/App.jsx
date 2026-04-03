@@ -83,9 +83,12 @@ async function fetchRecipeURL(pageUrl) {
 }
 
 function parseRecipeWithLLM(rawText) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30000)
   return fetch(WORKER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 4000,
@@ -196,6 +199,7 @@ Return ONLY the JSON, nothing else.`
       }
     }
   })
+  .finally(() => clearTimeout(timeout))
 }
 
 async function backupToNAS(recipes) {
