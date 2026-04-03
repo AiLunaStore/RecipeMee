@@ -380,16 +380,14 @@ export default function App() {
         // Generic URL — fetch page content
         setFetchingTranscript(true)
         setSourceUrl(textToParse) // remember URL for saving
+        let scrapedPhotoUrl = ''
         try {
           const result = await fetchRecipeURL(textToParse)
           if (!result.text || result.text.length < 100) {
             throw new Error('Could not read this page. Try copying the recipe text manually instead.')
           }
           textToParse = result.text
-          // Also store photoUrl for later
-          if (result.photoUrl) {
-            setParsed(prev => ({ ...prev, photoUrl: result.photoUrl }))
-          }
+          scrapedPhotoUrl = result.photoUrl || ''
         } catch (e) {
           setFetchingTranscript(false)
           setError(e.message)
@@ -397,13 +395,14 @@ export default function App() {
           return
         }
         setFetchingTranscript(false)
+        // Parse with LLM, then merge scraped photo if LLM didn't provide one
+        const llmResult = await parseRecipeWithLLM(textToParse)
+        setParsed({ ...llmResult, photoUrl: llmResult.photoUrl || scrapedPhotoUrl })
       } else {
         setSourceUrl('') // plain text, no source URL
+        const result = await parseRecipeWithLLM(textToParse)
+        setParsed(result)
       }
-      // Plain text — use as-is
-
-      const result = await parseRecipeWithLLM(textToParse)
-      setParsed(result)
     } catch (e) {
       setError(e.message)
     } finally {
