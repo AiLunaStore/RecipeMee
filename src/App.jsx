@@ -48,6 +48,9 @@ function extractVideoId(url) {
   return null
 }
 
+// YouTube API key (browser-compatible key with referrer restriction - works in browser context)
+const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
+
 async function fetchYouTubeTranscriptBrowser(videoId) {
   // Use YouTube Data API v3 directly from browser
   const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`
@@ -62,9 +65,6 @@ async function fetchYouTubeTranscriptBrowser(videoId) {
   if (description.length < 50) throw new Error('No description found')
   return { description, thumbnail }
 }
-
-// YouTube API key (browser-compatible key with referrer restriction - works in browser context)
-const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
 
 async function fetchRecipeURL(pageUrl) {
   // Use our NAS (residential IP) to fetch the URL - bypasses recipe site blocks
