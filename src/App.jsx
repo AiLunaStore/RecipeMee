@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const WORKER_URL = 'https://recipemee-proxy.recipemee.workers.dev/chat'
+const WORKER_URL = 'https://recipemee-transcript.recipemee.workers.dev/chat'
 const YOUTUBE_API_KEY = 'REDACTED-GOOGLE-API-KEY-2'
-const MODEL = 'minimax-m2'
+const MODEL = 'deepseek-chat'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 const NAS_SCRAPE_URL = 'https://levin-nas-1.tail065159.ts.net/scrape'
 
@@ -87,6 +87,7 @@ function parseRecipeWithLLM(rawText) {
       model: MODEL,
       max_tokens: 4000,
       temperature: 0.2,
+      api_key: 'sk-b3ec10308f7644c8a8b3765e52e60ea5',
       messages: [{
         role: 'system',
         content: `Parse this recipe into clean JSON. Be aggressive with tagging — detect EVERYTHING relevant.

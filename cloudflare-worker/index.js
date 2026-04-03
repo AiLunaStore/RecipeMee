@@ -5,6 +5,7 @@
 
 const YOUTUBE_API_KEY = 'AIzaSyCEjrxFAYdwzUH7EQIREx7V9L72Kk6r64I'
 const MINIMAX_BASE = 'https://api.minimax.io/anthropic'
+const DEEPSEEK_BASE = 'https://api.deepseek.com'
 
 export default {
   async fetch(request, env) {
@@ -41,12 +42,39 @@ async function handleChat(request, env) {
   }
 
   const MINIMAX_API_KEY = env.MINIMAX_API_KEY || ''
+  const DEEPSEEK_API_KEY = env.DEEPSEEK_API_KEY || ''
 
   try {
     const body = await request.json()
-    const { model = 'minimax-m2', messages, max_tokens = 4000 } = body
+    const { model = 'deepseek-chat', messages, max_tokens = 4000, temperature = 0.7 } = body
 
-    // Convert OpenAI format to Anthropic format
+    // Route to DeepSeek for deepseek-chat model (used for recipe parsing)
+    if (model.startsWith('deepseek')) {
+      const response = await fetch(`${DEEPSEEK_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages,
+          max_tokens,
+          temperature,
+        }),
+      })
+
+      const data = await response.json()
+      return new Response(JSON.stringify(data), {
+        status: response.status,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    }
+
+    // Default: route to MiniMax (Anthropic-compatible)
     const anthropicMessages = messages.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : m.role,
       content: m.content,
