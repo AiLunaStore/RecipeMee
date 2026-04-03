@@ -83,7 +83,6 @@ async function fetchRecipeURL(pageUrl) {
 }
 
 function parseRecipeWithLLM(rawText) {
-  console.log('[RecipeMee] parseRecipeWithLLM called, text length:', rawText.length)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 60000)
   return fetch(WORKER_URL, {
@@ -125,7 +124,7 @@ Return ONLY the JSON, nothing else.`
       }, { role: 'user', content: rawText }]
     })
   })
-  .catch(e => { if (e.name === 'AbortError') { console.error('[RecipeMee] parseRecipeWithLLM: TIMEOUT'); throw new Error('Request timed out — please try again') } throw e })
+  .catch(e => { if (e.name === 'AbortError') { throw new Error('Request timed out — please try again') } throw e })
   .then(r => r.json())
   .then(data => {
     const content = data.choices?.[0]?.message?.content || ''
@@ -365,15 +364,12 @@ export default function App() {
 
       // YouTube URL — get description via API
       if (isYouTubeURL(textToParse)) {
-        console.log('[RecipeMee] YouTube URL detected, fetching transcript...')
         setFetchingTranscript(true)
         setSourceUrl(textToParse)
         try {
           const videoId = extractVideoId(textToParse)
           if (!videoId) throw new Error('Could not extract video ID from this YouTube URL')
-          console.log('[RecipeMee] Video ID:', videoId)
           const result = await fetchYouTubeTranscriptBrowser(videoId)
-          console.log('[RecipeMee] YouTube API result:', result.description?.length, 'chars, photo:', !!result.thumbnail)
           if (!result.description || result.description.length < 50) {
             throw new Error('This video has no description. Try copying the recipe text manually.')
           }
@@ -382,16 +378,13 @@ export default function App() {
             setParsed(prev => ({ ...prev, photoUrl: result.thumbnail }))
           }
         } catch (e) {
-          console.error('[RecipeMee] YouTube fetch error:', e.message)
           setFetchingTranscript(false)
           setError(e.message)
           setLoading(false)
           return
         }
         setFetchingTranscript(false)
-        console.log('[RecipeMee] Sending to LLM parser...')
         const result = await parseRecipeWithLLM(textToParse)
-        console.log('[RecipeMee] LLM result:', JSON.stringify(result).slice(0,200))
         setParsed(result)
       } else if (textToParse.startsWith('http://') || textToParse.startsWith('https://')) {
         // Generic URL — fetch page content
@@ -421,10 +414,8 @@ export default function App() {
         setParsed(result)
       }
     } catch (e) {
-      console.error('[RecipeMee] handleParse error:', e.message)
       setError(e.message)
     } finally {
-      console.log('[RecipeMee] handleParse finally - loading cleared')
       setLoading(false)
       setFetchingTranscript(false)
     }
@@ -678,6 +669,13 @@ export default function App() {
             />
 
             {error && <div style={styles.errorBox}>{error}</div>}
+
+            {loading && (
+              <div style={{ padding: '12px', background: '#1A1A1A', borderRadius: '10px', fontSize: '13px', color: '#A1A1AA', fontFamily: 'monospace' }}>
+                {fetchingTranscript ? '📡 Fetching video transcript...' : '🤖 Parsing recipe with AI...'}
+                <br />This takes 15-30 seconds. Please wait.
+              </div>
+            )}
 
             <button style={styles.primaryBtn} onClick={handleParse} disabled={loading || !rawText.trim() || fetchingTranscript}>
               {fetchingTranscript ? '📺 Getting recipe...' : loading ? '⏳ Parsing...' : '✨ Get Recipe'}
