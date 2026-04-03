@@ -294,11 +294,19 @@ export default function App() {
   const syncTimerRef = useRef(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('recipemee_recipes')
-    if (saved) setRecipes(JSON.parse(saved))
-    const savedGrocery = localStorage.getItem('recipemee_grocery')
-    if (savedGrocery) setGroceryList(JSON.parse(savedGrocery))
-    checkNASCount()
+    // Always load from NAS on startup to get latest data (no confirmation needed)
+    ;(async () => {
+      try {
+        const data = await restoreFromNAS()
+        if (data.recipes?.length) {
+          setRecipes(data.recipes)
+          localStorage.setItem('recipemee_recipes', JSON.stringify(data.recipes))
+        }
+      } catch { /* ignore */ }
+      const savedGrocery = localStorage.getItem('recipemee_grocery')
+      if (savedGrocery) setGroceryList(JSON.parse(savedGrocery))
+      checkNASCount()
+    })()
   }, [])
 
   useEffect(() => {
