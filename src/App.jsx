@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 
 const WORKER_URL = 'https://levin-nas-1.tail065159.ts.net/chat'
 
-const MODEL = 'deepseek-chat'
+const MODEL = 'minimax'
 const NAS_BACKUP_URL = 'https://levin-nas-1.tail065159.ts.net/backup'
 const NAS_SCRAPE_URL = 'https://levin-nas-1.tail065159.ts.net/scrape'
 

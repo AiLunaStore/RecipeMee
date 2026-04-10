@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 RecipeMee NAS Server
-Handles: recipe backup/restore, URL scraping (residential IP), LLM chat (DeepSeek)
+Handles: recipe backup/restore, URL scraping (residential IP), LLM chat (MiniMax)
 """
 
 from flask import Flask, request, jsonify
@@ -12,14 +12,14 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-from deepseek import DeepSeekClient as DeepSeek
 
 app = Flask(__name__)
 CORS(app)
 
 BACKUP_DIR = '/volume1/docker/recipemee-backup'
 BACKUP_FILE = os.path.join(BACKUP_DIR, 'recipes.json')
-DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', 'sk-b3ec10308f7644c8a8b3765e52e60ea5')
+MINIMAX_API_KEY = os.environ.get('MINIMAX_API_KEY', 'sk-cp-riuyqSCx1cNLCu294x2MSRZ4_W5YUBt6SkmZ1tQM4GioQBnMSD8nD6EX19Y2jKoLiOQoriECeMpcQdMjWQU7Z51EKgKhYABHVAt0ZJ8Y3x7vFVIjPgyJbW8')
+MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic/v1'
 
 USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
@@ -137,7 +137,7 @@ def chat():
         return '', 204
     data = request.get_json() or {}
     messages = data.get('messages', [])
-    model = data.get('model', 'deepseek-chat')
+    model = data.get('model', 'minimax')
     max_tokens = data.get('max_tokens', 4000)
     temperature = data.get('temperature', 0.7)
 
@@ -151,9 +151,7 @@ def chat():
     if not user_message:
         return jsonify({'error': 'No message content'}), 400
 
-    try:
-        client = DeepSeek(api_key=DEEPSEEK_API_KEY)
-        system_prompt = """Parse this recipe into clean JSON. Return ONLY the JSON object with this exact structure:
+    system_prompt = """Parse this recipe into clean JSON. Return ONLY the JSON object with this exact structure:
 {
   "title": "Recipe name",
   "description": "1-2 sentence description",
@@ -178,17 +176,40 @@ def chat():
 
 IMPORTANT: Return ONLY the JSON object, nothing else. No markdown, no explanation. Estimate nutrition per serving based on ingredients — include calories, protein, carbs, fat, fiber (and sugar/sodium if identifiable)."""
 
-        response = client.chat_completion(
-            model='deepseek-chat',
-            messages=[
+    try:
+        # MiniMax Anthropic-compatible API
+        payload = {
+            'model': 'MiniMax-M2.7',
+            'max_tokens': max_tokens,
+            'temperature': temperature,
+            'messages': [
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_message}
-            ],
-            max_tokens=max_tokens,
-            temperature=temperature,
+            ]
+        }
+        headers = {
+            'Authorization': f'Bearer {MINIMAX_API_KEY}',
+            'Content-Type': 'application/json',
+            'anthropic-version': '2023-06-01'
+        }
+        resp = requests.post(
+            f'{MINIMAX_BASE_URL}/messages',
+            json=payload,
+            headers=headers,
+            timeout=60
         )
-
-        content = response.choices[0].message.content
+        resp.raise_for_status()
+        resp_data = resp.json()
+        # MiniMax returns content as [{"type": "text"|"thinking", "text": "..."}]
+        raw_content = resp_data.get('content', [])
+        content = ''
+        if isinstance(raw_content, list):
+            for block in raw_content:
+                if isinstance(block, dict) and block.get('type') == 'text':
+                    content = block.get('text', '')
+                    break
+        if not content:
+            content = str(raw_content)
 
         # Strip markdown code blocks if present
         content = content.strip()
@@ -202,7 +223,6 @@ IMPORTANT: Return ONLY the JSON object, nothing else. No markdown, no explanatio
             parsed = json.loads(content)
             return jsonify({'choices': [{'message': {'content': json.dumps(parsed)}}]})
         except json.JSONDecodeError:
-            # Return as-is, let the app handle it
             return jsonify({'choices': [{'message': {'content': content}}]})
 
     except Exception as e:
