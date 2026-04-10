@@ -59,6 +59,8 @@ def scrape():
     if request.method == 'OPTIONS':
         return '', 204
 
+    target_url = request.args.get('url', '')
+
     # Handle YouTube URLs specially - use the Data API to get description
     if 'youtube.com' in target_url or 'youtu.be' in target_url:
         video_id = None
