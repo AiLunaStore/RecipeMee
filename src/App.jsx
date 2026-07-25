@@ -204,8 +204,23 @@ Return ONLY the JSON, nothing else.`
   .finally(() => clearTimeout(timeout))
 }
 
+// Fetch wrapper with 8s timeout — fails fast instead of hanging forever
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    return response
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('NAS timeout — backup server unreachable')
+    throw new Error('NAS unreachable — check your network')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function backupToNAS(recipes) {
-  const response = await fetch(NAS_BACKUP_URL, {
+  const response = await fetchWithTimeout(NAS_BACKUP_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ recipes, lastUpdated: new Date().toISOString() })
@@ -215,7 +230,7 @@ async function backupToNAS(recipes) {
 }
 
 async function restoreFromNAS() {
-  const response = await fetch(NAS_BACKUP_URL)
+  const response = await fetchWithTimeout(NAS_BACKUP_URL)
   if (!response.ok) throw new Error('Restore failed')
   return response.json()
 }
@@ -285,6 +300,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('')
   const [lastSync, setLastSync] = useState(localStorage.getItem('recipemee_last_sync') || '')
   const [nasCount, setNasCount] = useState(null)
+  const [nasReachable, setNasReachable] = useState(true)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [selectedRecipe, setSelectedRecipe] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
@@ -294,15 +310,21 @@ export default function App() {
   const syncTimerRef = useRef(null)
 
   useEffect(() => {
-    // Always load from NAS on startup to get latest data (no confirmation needed)
+    // Try NAS on startup, fall back to localStorage if unreachable — no scary alerts
     ;(async () => {
       try {
         const data = await restoreFromNAS()
+        setNasReachable(true)
         if (data.recipes?.length) {
           setRecipes(data.recipes)
           localStorage.setItem('recipemee_recipes', JSON.stringify(data.recipes))
         }
-      } catch { /* ignore */ }
+      } catch {
+        // NAS unreachable — load from localStorage instead
+        setNasReachable(false)
+        const saved = localStorage.getItem('recipemee_recipes')
+        if (saved) setRecipes(JSON.parse(saved))
+      }
       const savedGrocery = localStorage.getItem('recipemee_grocery')
       if (savedGrocery) setGroceryList(JSON.parse(savedGrocery))
       checkNASCount()
@@ -321,7 +343,11 @@ export default function App() {
     try {
       const data = await restoreFromNAS()
       setNasCount(data.count || 0)
-    } catch { setNasCount(null) }
+      setNasReachable(true)
+    } catch {
+      setNasCount(null)
+      setNasReachable(false)
+    }
   }
 
   async function autoBackup() {
@@ -329,13 +355,16 @@ export default function App() {
       setSyncStatus('syncing')
       await backupToNAS(recipes)
       setSyncStatus('saved')
+      setNasReachable(true)
       const now = new Date().toLocaleTimeString()
       setLastSync(now)
       localStorage.setItem('recipemee_last_sync', now)
       checkNASCount()
       setTimeout(() => setSyncStatus(''), 2000)
     } catch {
-      setSyncStatus('error')
+      // Backup failed silently — recipes still saved locally, will retry next change
+      setSyncStatus('offline')
+      setNasReachable(false)
       setTimeout(() => setSyncStatus(''), 3000)
     }
   }
@@ -349,16 +378,19 @@ export default function App() {
         setRecipes(data.recipes)
         localStorage.setItem('recipemee_recipes', JSON.stringify(data.recipes))
         setSyncStatus('restored')
+        setNasReachable(true)
         setLastSync(data.lastBackup ? new Date(data.lastBackup).toLocaleString() : '')
         checkNASCount()
         setTimeout(() => setSyncStatus(''), 2000)
       } else {
-        alert('No recipes found in backup.')
-        setSyncStatus('')
+        // No backup on NAS — fall back to localStorage
+        setSyncStatus('empty')
+        setTimeout(() => setSyncStatus(''), 3000)
       }
-    } catch (e) {
-      alert('Restore failed: ' + e.message)
-      setSyncStatus('error')
+    } catch {
+      // NAS unreachable — load whatever's in localStorage so app keeps working
+      setSyncStatus('offline')
+      setNasReachable(false)
       setTimeout(() => setSyncStatus(''), 3000)
     }
   }
@@ -634,7 +666,7 @@ export default function App() {
                 ♥ Favorites {showFavoritesOnly ? 'On' : ''}
               </button>
               <span style={{ flex: 1, fontSize: '13px', color: COLORS.textSecondary, textAlign: 'center' }}>
-                {nasCount !== null ? (nasCount > 0 ? `${nasCount} backed up` : 'No backup yet') : '...'}
+                {!nasReachable ? '☁️ Offline' : nasCount !== null ? (nasCount > 0 ? `${nasCount} backed up` : 'No backup yet') : '...'}
               </span>
               {lastSync && <span style={{ fontSize: '12px', color: COLORS.textMuted }}>Synced {lastSync}</span>}
               <button style={styles.restoreBtnSmall} onClick={handleRestore}>↩</button>
