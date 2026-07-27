@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-const WORKER_URL = 'https://mac-mini.tail065159.ts.net:8443/chat'
+const WORKER_URL = 'https://mac-mini-1.tail065159.ts.net:8443/chat'
 
 const MODEL = 'minimax'
-const NAS_BACKUP_URL = 'https://mac-mini.tail065159.ts.net:8443/backup'
-const NAS_SCRAPE_URL = 'https://mac-mini.tail065159.ts.net:8443/scrape'
+const NAS_BACKUP_URL = 'https://mac-mini-1.tail065159.ts.net:8443/backup'
+const NAS_SCRAPE_URL = 'https://mac-mini-1.tail065159.ts.net:8443/scrape'
 
 const COLORS = {
   bg: '#0D0D0D',
