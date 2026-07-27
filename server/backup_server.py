@@ -9,14 +9,23 @@ from flask_cors import CORS
 import json
 import os
 import re
+import certifi
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
+# Use certifi's bundled CA bundle (cross-platform: works on macOS + Linux).
+# The previous /etc/ssl/certs/ca-certificates.crt path is Linux-only and broke
+# recipe scraping on macOS (the home server runs macOS).
+SSL_CA_BUNDLE = certifi.where()
+
 app = Flask(__name__)
 CORS(app)
 
-BACKUP_DIR = '/volume1/docker/recipemee-backup'
+BACKUP_DIR = os.environ.get(
+    'BACKUP_DIR',
+    os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', 'RecipeMee')
+)
 BACKUP_FILE = os.path.join(BACKUP_DIR, 'recipes.json')
 MINIMAX_API_KEY = os.environ.get('MINIMAX_API_KEY', 'sk-cp-riuyqSCx1cNLCu294x2MSRZ4_W5YUBt6SkmZ1tQM4GioQBnMSD8nD6EX19Y2jKoLiOQoriECeMpcQdMjWQU7Z51EKgKhYABHVAt0ZJ8Y3x7vFVIjPgyJbW8')
 MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic/v1'
@@ -102,7 +111,7 @@ def scrape():
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
-        }, verify='/etc/ssl/certs/ca-certificates.crt')
+        }, verify=SSL_CA_BUNDLE)
         resp.raise_for_status()
         content_type = resp.headers.get('content-type', '')
         if 'text/html' not in content_type:
@@ -238,10 +247,16 @@ def health():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8765))
-    from gevent.pywsgi import WSGIServer
-    print(f'RecipeMee NAS Server running on port {port}')
-    http_server = WSGIServer(('0.0.0.0', port), app)
-    http_server.serve_forever()
+    host = os.environ.get('HOST', '0.0.0.0')
+    print(f'RecipeMee Backup Server running on {host}:{port}', flush=True)
+    try:
+        from gevent.pywsgi import WSGIServer
+        http_server = WSGIServer((host, port), app)
+        http_server.serve_forever()
+    except ImportError:
+        # Pure-Python fallback (gevent doesn't build on newer Pythons)
+        from waitress import serve
+        serve(app, host=host, port=port)
 
 @app.route('/youtube', methods=['GET', 'OPTIONS'])
 def youtube_transcript():
